@@ -1,4 +1,4 @@
-package timescaledb
+package clickhouse
 
 import (
 	"fmt"
@@ -12,13 +12,12 @@ import (
 // Devops produces TimescaleDB-specific queries for all the devops query types.
 type Devops struct {
 	*devops.Core
-	UseJSON bool
 	UseTags bool
 }
 
 // NewDevops makes an Devops object ready to generate Queries.
 func NewDevops(start, end time.Time, scale int) *Devops {
-	return &Devops{devops.NewCore(start, end, scale), false, false}
+	return &Devops{devops.NewCore(start, end, scale), false}
 }
 
 // GenerateEmptyQuery returns an empty query.TimescaleDB
@@ -30,24 +29,24 @@ func (d *Devops) GenerateEmptyQuery() query.Query {
 // NB 'WHERE' itself is not included, just hostname filter clauses, ready to concatenate to 'WHERE' string
 func (d *Devops) getHostWhereWithHostnames(hostnames []string) string {
 	hostnameClauses := []string{}
-	if d.UseJSON {
-		for _, s := range hostnames {
-			hostnameClauses = append(hostnameClauses, fmt.Sprintf("tagset @> '{\"hostname\": \"%s\"}'", s))
-		}
-		return fmt.Sprintf("tags_id IN (SELECT id FROM tags WHERE %s)", strings.Join(hostnameClauses, " OR "))
-	} else if d.UseTags {
+
+	if d.UseTags {
+		// Use separated table for Tags
+		// Need to prepare WHERE with `tags` table
+		// WHERE tags_id IN (SELECT those tag.id FROM separated tags table WHERE )
 		for _, s := range hostnames {
 			hostnameClauses = append(hostnameClauses, fmt.Sprintf("'%s'", s))
 		}
 		return fmt.Sprintf("tags_id IN (SELECT id FROM tags WHERE hostname IN (%s))", strings.Join(hostnameClauses, ","))
-	} else {
-		for _, s := range hostnames {
-			hostnameClauses = append(hostnameClauses, fmt.Sprintf("hostname = '%s'", s))
-		}
-		combinedHostnameClause := strings.Join(hostnameClauses, " OR ")
-
-		return "(" + combinedHostnameClause + ")"
 	}
+
+	// All tags are included into one table
+	// Need to prepare WHERE (hostname = 'host1' OR hostname = 'host2') clause
+	for _, s := range hostnames {
+		hostnameClauses = append(hostnameClauses, fmt.Sprintf("hostname = '%s'", s))
+	}
+	// (host=h1 OR host=h2)
+	return "(" + strings.Join(hostnameClauses, " OR ") + ")"
 }
 
 // getHostWhereString gets multiple random hostnames and create WHERE SQL statement for these hostnames.
@@ -61,7 +60,6 @@ func (d *Devops) getSelectClausesAggMetrics(agg string, metrics []string) []stri
 	for i, m := range metrics {
 		selectClauses[i] = fmt.Sprintf("%[1]s(%[2]s) as %[1]s_%[2]s", agg, m)
 	}
-
 	return selectClauses
 }
 
@@ -86,7 +84,7 @@ func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange t
 
 	sql := fmt.Sprintf(`
 		SELECT
-			time_bucket('1 minute', time) AS minute,
+			toStartOfMinute(time) AS minute,
     		%s
     	FROM
 			cpu
@@ -104,7 +102,7 @@ func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange t
 		interval.Start.Format(goTimeFmt),
 		interval.End.Format(goTimeFmt))
 
-	humanLabel := fmt.Sprintf("TimescaleDB %d cpu metric(s), random %4d hosts, random %s by 1m", numMetrics, nHosts, timeRange)
+	humanLabel := fmt.Sprintf("ClickHouse %d cpu metric(s), random %4d hosts, random %s by 1m", numMetrics, nHosts, timeRange)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }
@@ -120,7 +118,7 @@ func (d *Devops) GroupByOrderByLimit(qi query.Query) {
 	interval := d.Interval.RandWindow(time.Hour)
 	sql := fmt.Sprintf(`
 		SELECT
-			time_bucket('1 minute', time) AS minute,
+			toStartOfMinute(time) AS minute,
 			max(usage_user)
 		FROM
 			cpu
@@ -135,7 +133,7 @@ func (d *Devops) GroupByOrderByLimit(qi query.Query) {
 		`,
 		interval.End.Format(goTimeFmt))
 
-	humanLabel := "TimescaleDB max cpu over last 5 min-intervals (random end)"
+	humanLabel := "ClickHouse max cpu over last 5 min-intervals (random end)"
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.EndString())
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }
@@ -161,19 +159,19 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 
 	hostnameField := "hostname"
 	joinStr := ""
-	if d.UseJSON || d.UseTags {
-		if d.UseJSON {
-			hostnameField = "tags->>'hostname'"
-		} else if d.UseTags {
-			hostnameField = "tags.hostname"
-		}
+	if d.UseTags {
+		hostnameField = "tags.hostname"
 		joinStr = "JOIN tags ON cpu_avg.tags_id = tags.id"
 	}
 
 	sql := fmt.Sprintf(`
-        WITH cpu_avg AS (
+        SELECT
+			hour,
+			%s,
+			%s
+        FROM (
 			SELECT
-				time_bucket('1 hour', time) as hour,
+				to StartOfHour(time) as hour,
 				tags_id,
 				%s
 			FROM
@@ -184,27 +182,21 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 			GROUP BY
 				hour,
 				tags_id
-        )
-        SELECT
-			hour,
-			%s,
-			%s
-        FROM
-			cpu_avg
-		%s
+        ) AS cpu_avg
+		%s 
         ORDER BY
 			hour,
 			%s
 		`,
-		strings.Join(selectClauses, ", "),
-		interval.Start.Format(goTimeFmt),
-		interval.End.Format(goTimeFmt),
-		hostnameField,
-		strings.Join(meanClauses, ", "),
-		joinStr,	// JOIN
-		hostnameField)
+		hostnameField,							// main SELECT %s,
+		strings.Join(meanClauses, ", "),	// main SELECT %s
+		strings.Join(selectClauses, ", "),	// cpu_avg SELECT %s
+		interval.Start.Format(goTimeFmt),		// cpu_avg time >= '%s'
+		interval.End.Format(goTimeFmt),			// cpu_avg time < '%s'
+		joinStr,								// JOIN clause
+		hostnameField)							// ORDER BY %s
 
-	humanLabel := devops.GetDoubleGroupByLabel("TimescaleDB", numMetrics)
+	humanLabel := devops.GetDoubleGroupByLabel("ClickHouse", numMetrics)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }
@@ -227,7 +219,7 @@ func (d *Devops) MaxAllCPU(qi query.Query, nHosts int) {
 
 	sql := fmt.Sprintf(`
 		SELECT
-			time_bucket('1 hour', time) AS hour,
+			toStartOfHour(time) AS hour,
     		%s
     	FROM
 			cpu
@@ -245,7 +237,7 @@ func (d *Devops) MaxAllCPU(qi query.Query, nHosts int) {
 		interval.Start.Format(goTimeFmt),
 		interval.End.Format(goTimeFmt))
 
-	humanLabel := devops.GetMaxAllLabel("TimescaleDB", nHosts)
+	humanLabel := devops.GetMaxAllLabel("ClickHouse", nHosts)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }
@@ -256,14 +248,14 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 	if d.UseTags {
 		sql = fmt.Sprintf(`
 			SELECT
-				DISTINCT ON (t.hostname) *
+				DISTINCT(t.hostname), *
 			FROM
-				tags t
-			INNER JOIN LATERAL (
+				tags AS t
+			INNER JOIN (
 				SELECT
 					*
 				FROM
-					cpu c
+					cpu AS c
 				WHERE
 					c.tags_id = t.id
 				ORDER BY
@@ -275,34 +267,10 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 				t.hostname,
 				b.time DESC
 			`)
-
-	} else if d.UseJSON {
-		sql = fmt.Sprintf(`
-			SELECT
-				DISTINCT ON (t.tagset->>'hostname') *
-			FROM
-				tags t
-			INNER JOIN LATERAL (
-				SELECT
-					*
-				FROM
-					cpu c
-				WHERE
-					c.tags_id = t.id
-				ORDER BY
-					time DESC
-				LIMIT
-					1
-			) AS b ON true 
-			ORDER BY
-				t.tagset->>'hostname',
-				b.time DESC
-			`)
-
 	} else {
 		sql = fmt.Sprintf(`
 			SELECT
-				DISTINCT ON (hostname) *
+				DISTINCT(hostname), *
 			FROM
 				cpu
 			ORDER BY
@@ -311,7 +279,7 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 			`)
 	}
 
-	humanLabel := "TimescaleDB last row per host"
+	humanLabel := "ClickHouse last row per host"
 	humanDesc := humanLabel
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }
@@ -348,7 +316,7 @@ func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
 		interval.End.Format(goTimeFmt),
 		hostWhereClause)
 
-	humanLabel := devops.GetHighCPULabel("TimescaleDB", nHosts)
+	humanLabel := devops.GetHighCPULabel("ClickHouse", nHosts)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }

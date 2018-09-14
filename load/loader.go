@@ -45,6 +45,7 @@ type Benchmark interface {
 // BenchmarkRunner is responsible for initializing and storing common
 // flags across all database systems and ultimately running a supplied Benchmark
 type BenchmarkRunner struct {
+	// flag fields
 	dbName          string
 	batchSize       uint
 	workers         uint

@@ -33,6 +33,7 @@ import (
 const (
 	// Output data format choices (alphabetical order)
 	formatCassandra   = "cassandra"
+	formatClickhouse  = "clickhouse"
 	formatInflux      = "influx"
 	formatMongo       = "mongo"
 	formatTimescaleDB = "timescaledb"
@@ -45,7 +46,13 @@ const (
 
 // semi-constants
 var (
-	formatChoices = []string{formatCassandra, formatInflux, formatMongo, formatTimescaleDB}
+	formatChoices = []string{
+		formatCassandra,
+		formatClickhouse,
+		formatInflux,
+		formatMongo,
+		formatTimescaleDB,
+	}
 	// allows for testing
 	fatal = log.Fatalf
 )
@@ -217,10 +224,16 @@ func getSerializer(sim common.Simulator, format string, out *bufio.Writer) seria
 	switch format {
 	case formatCassandra:
 		return &serialize.CassandraSerializer{}
+
 	case formatInflux:
 		return &serialize.InfluxSerializer{}
+
 	case formatMongo:
 		return &serialize.MongoSerializer{}
+
+	case formatClickhouse:
+		fallthrough
+
 	case formatTimescaleDB:
 		out.WriteString("tags")
 		for _, key := range devops.MachineTagKeys {
@@ -247,10 +260,10 @@ func getSerializer(sim common.Simulator, format string, out *bufio.Writer) seria
 		out.WriteString("\n")
 
 		return &serialize.TimescaleDBSerializer{}
-	default:
-		fatal("unknown format: '%s'", format)
-		return nil
 	}
+
+	fatal("unknown format: '%s'", format)
+	return nil
 }
 
 // startMemoryProfile sets up memory profiling to be written to profileFile. It

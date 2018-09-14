@@ -19,6 +19,7 @@ import (
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/timescaledb"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/devops"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/utils"
+	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/clickhouse"
 )
 
 var useCaseMatrix = map[string]map[string]utils.QueryFillerMaker{
@@ -54,6 +55,8 @@ var (
 	timescaleUseJSON bool
 	timescaleUseTags bool
 
+	clickhouseUseTags bool
+
 	interleavedGenerationGroupID uint
 	interleavedGenerationGroups  uint
 )
@@ -61,6 +64,10 @@ var (
 func getGenerator(format string, start, end time.Time, scale int) utils.DevopsGenerator {
 	if format == "cassandra" {
 		return cassandra.NewDevops(start, end, scale)
+	} else if format == "clickhouse" {
+		tgen := clickhouse.NewDevops(start, end, scale)
+		tgen.UseTags = clickhouseUseTags
+		return tgen
 	} else if format == "influx" {
 		return influx.NewDevops(start, end, scale)
 	} else if format == "mongo" {
@@ -106,6 +113,8 @@ func init() {
 
 	flag.BoolVar(&timescaleUseJSON, "timescale-use-json", false, "TimescaleDB only: Use separate JSON tags table when querying")
 	flag.BoolVar(&timescaleUseTags, "timescale-use-tags", true, "TimescaleDB only: Use separate tags table when querying")
+
+	flag.BoolVar(&clickhouseUseTags, "clickhouse-use-tags", true, "ClickHouse only: Use separate tags table when querying")
 
 	flag.StringVar(&timestampStartStr, "timestamp-start", "2016-01-01T00:00:00Z", "Beginning timestamp (RFC3339).")
 	flag.StringVar(&timestampEndStr, "timestamp-end", "2016-01-02T06:00:00Z", "Ending timestamp (RFC3339).")
