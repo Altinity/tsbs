@@ -127,7 +127,7 @@ func TestWork(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	c := newDuplexChannel(2)
+	c := createDuplexChannel(2)
 	c.sendToWorker(&testBatch{})
 	c.sendToWorker(&testBatch{})
 	go br.work(b, &wg, c, 0)

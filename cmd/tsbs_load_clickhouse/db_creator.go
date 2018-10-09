@@ -9,17 +9,19 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// loader.DBCreator interface implementation
 type dbCreator struct {
 	tags    string
 	cols    []string
 	connStr string
 }
 
+// loader.DBCreator interface implementation
 func (d *dbCreator) Init() {
 	br := loader.GetBufferedReader()
 	d.readDataHeader(br)
 
-	// Needed to connect to user's database in order to drop/create db-name database
+	// Needed to connect to user's database in order to drop/create database
 	re := regexp.MustCompile(`(dbname)=\S*\b`)
 	d.connStr = re.ReplaceAllString(getConnectString(), "")
 }
@@ -51,7 +53,7 @@ func (d *dbCreator) readDataHeader(br *bufio.Reader) {
 			}
 			d.tags = strings.TrimSpace(d.tags)
 		} else {
-			// read the second and further lines
+			// read the second and further lines - metrics descriptions
 			line, err = br.ReadString('\n')
 			if err != nil {
 				fatal("input has wrong header format: %v", err)
@@ -68,32 +70,36 @@ func (d *dbCreator) readDataHeader(br *bufio.Reader) {
 	}
 }
 
-// DBExists
+// loader.DBCreator interface implementation
 func (d *dbCreator) DBExists(dbName string) bool {
 	db := sqlx.MustConnect(dbType, d.connStr)
 	defer db.Close()
+
 	sql := "SELECT 1 FROM system.tables WHERE name = $1"
 	if debug > 0 {
 		fmt.Printf(sql)
 	}
 	r, _ := db.Queryx(sql, dbName)
 	defer r.Close()
+
 	return r.Next()
 }
 
-// RemoveOldDB
+// loader.DBCreator interface implementation
 func (d *dbCreator) RemoveOldDB(dbName string) error {
 	db := sqlx.MustConnect(dbType, d.connStr)
 	defer db.Close()
+
 	sql := "DROP DATABASE IF EXISTS " + dbName
 	if debug > 0 {
 		fmt.Printf(sql)
 	}
 	db.MustExec(sql)
+
 	return nil
 }
 
-// CreateDB
+// loader.DBCreator interface implementation
 func (d *dbCreator) CreateDB(dbName string) error {
 	db := sqlx.MustConnect(dbType, d.connStr)
 	sql := "CREATE DATABASE " + dbName
@@ -121,7 +127,7 @@ func (d *dbCreator) CreateDB(dbName string) error {
 	createTagsTable(dbBench, parts[1:])
 	tableCols["tags"] = parts[1:]
 
-	// d.cols content:
+	// d.cols content are lines (metrics descriptions) as:
 	//cpu,usage_user,usage_system,usage_idle,usage_nice,usage_iowait,usage_irq,usage_softirq,usage_steal,usage_guest,usage_guest_nice
 	//disk,total,free,used,used_percent,inodes_total,inodes_free,inodes_used
 	//nginx,accepts,active,handled,reading,requests,waiting,writing
@@ -134,6 +140,7 @@ func (d *dbCreator) CreateDB(dbName string) error {
 		// N: table columns
 		parts = strings.Split(strings.TrimSpace(cols), ",")
 
+		// Ex.: cpu OR disk OR nginx
 		tableName := parts[0]
 		tableCols[tableName] = parts[1:]
 
@@ -161,7 +168,7 @@ func (d *dbCreator) CreateDB(dbName string) error {
 			}
 
 			fieldDef = append(fieldDef, fmt.Sprintf("%s %s", field, fieldType))
-			if fieldIndexCount == -1 || idx < (fieldIndexCount+extraCols) {
+			if fieldIndexCount == -1 || idx < (fieldIndexCount + extraCols) {
 				indexes = append(indexes, d.getCreateIndexOnFieldCmds(tableName, field, idxType)...)
 			}
 		}
@@ -227,4 +234,34 @@ func (d *dbCreator) getCreateIndexOnFieldCmds(hypertable, field, idxType string)
 	//}
 	//return ret
 	return nil
+}
+
+
+// createTagsTable builds CREATE TABLE SQL statement and runs it
+func createTagsTable(db *sqlx.DB, tags []string) {
+
+	// prepare COLUMNs specification for CREATE TABLE statement
+	// all columns would be of type String
+	cols := strings.Join(tags, " String, ")
+	cols += " String"
+
+	// index would be on all fields
+	index := strings.Join(tags, ","	)
+
+	sql := fmt.Sprintf(`
+		CREATE TABLE tags(
+			created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			id,
+			%s
+		) engine=MergeTree(created_at, (%s), 8192)
+		`,
+		cols,
+		index)
+	if debug > 0 {
+		fmt.Printf(sql)
+	}
+	db.MustExec(sql)
+
+	//db.MustExec(fmt.Sprintf("CREATE UNIQUE INDEX uniq1 ON tags(%s)", strings.Join(tags, ",")))
+	//db.MustExec(fmt.Sprintf("CREATE INDEX ON tags(%s)", tags[0]))
 }

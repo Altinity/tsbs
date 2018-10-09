@@ -1,4 +1,4 @@
-// tsbs_load_timescaledb loads a TimescaleDB instance with data from stdin.
+// tsbs_load_clickhouse loads a ClickHouse instance with data from stdin.
 //
 // If the database exists beforehand, it will be *DROPPED*.
 package main
@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/kshvakov/clickhouse"
 	"github.com/timescale/tsbs/load"
 )
 
@@ -25,10 +23,10 @@ const (
 
 // Program option vars:
 var (
-	clickhouseConnect string
-	host              string
-	user              string
-	password          string
+	chConnectString string
+	host            string
+	user            string
+	password        string
 
 	logBatches    bool
 	inTableTag    bool
@@ -67,7 +65,7 @@ var fatal = log.Fatalf
 func init() {
 	loader = load.GetBenchmarkRunner()
 
-	flag.StringVar(&clickhouseConnect, "clickhouse", "tcp://127.0.0.1:9000?debug=true", "ClickHouse connection string")
+	flag.StringVar(&chConnectString, "clickhouse", "tcp://127.0.0.1:9000?debug=true", "ClickHouse connection string")
 	flag.StringVar(&host, "host", "localhost", "Hostname of ClickHouse instance")
 	flag.StringVar(&user, "user", "default", "User to connect to ClickHouse as")
 	flag.StringVar(&password, "password", "", "Password to connect to ClickHouse")
@@ -77,7 +75,7 @@ func init() {
 	// TODO - This flag could potentially be done as a string/enum with other options besides no-hash, round-robin, etc
 	flag.BoolVar(&hashWorkers, "hash-workers", false, "Whether to consistently hash insert data to the same workers (i.e., the data for a particular host always goes to the same worker)")
 
-	flag.IntVar(&numberPartitions, "partitions", 1, "Number of patitions")
+	flag.IntVar(&numberPartitions, "partitions", 1, "Number of partitions")
 	flag.DurationVar(&chunkTime, "chunk-time", 12*time.Hour, "Duration that each chunk should represent, e.g., 12h")
 
 	flag.BoolVar(&timeIndex, "time-index", true, "Whether to build an index on the time dimension")
@@ -94,27 +92,37 @@ func init() {
 	tableCols = make(map[string][]string)
 }
 
+// loader.Benchmark interface implementation
 type benchmark struct{}
 
+// loader.Benchmark interface implementation
 func (b *benchmark) GetPointDecoder(br *bufio.Reader) load.PointDecoder {
-	return &decoder{scanner: bufio.NewScanner(br)}
+	return &decoder{
+		scanner: bufio.NewScanner(br),
+	}
 }
 
+// loader.Benchmark interface implementation
 func (b *benchmark) GetBatchFactory() load.BatchFactory {
 	return &factory{}
 }
 
+// loader.Benchmark interface implementation
 func (b *benchmark) GetPointIndexer(maxPartitions uint) load.PointIndexer {
 	if hashWorkers {
-		return &hostnameIndexer{partitions: maxPartitions}
+		return &hostnameIndexer{
+			partitions: maxPartitions,
+		}
 	}
 	return &load.ConstantIndexer{}
 }
 
+// loader.Benchmark interface implementation
 func (b *benchmark) GetProcessor() load.Processor {
 	return &processor{}
 }
 
+// loader.Benchmark interface implementation
 func (b *benchmark) GetDBCreator() load.DBCreator {
 	return &dbCreator{}
 }
@@ -136,36 +144,7 @@ func getConnectString() string {
 	// User might be passing in host=hostname the connect string out of habit which may override the
 	// multi host configuration. Same for dbname= and user=. This sanitizes that.
 	re := regexp.MustCompile(`(host|dbname|user|password)=\S*\b`)
-	connectString := strings.TrimSpace(re.ReplaceAllString(clickhouseConnect, ""))
+	connectString := strings.TrimSpace(re.ReplaceAllString(chConnectString, ""))
 
 	return fmt.Sprintf("host=%s dbname=%s user=%s password=%s %s", host, loader.DatabaseName(), user, password, connectString)
-}
-
-// createTagsTable builds CREATE TABLE SQL statement and runs it
-func createTagsTable(db *sqlx.DB, tags []string) {
-
-	// prepare COLUMNs specification for CREATE TABLE statement
-	// all columns would be of type String
-	cols := strings.Join(tags, " String, ")
-	cols += " String"
-
-	// index would be on all fields
-	index := strings.Join(tags, ","	)
-
-	sql := fmt.Sprintf(`
-		CREATE TABLE tags(
-			created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			id,
-			%s
-		) engine=MergeTree(created_at, (%s), 8192)
-		`,
-		cols,
-		index)
-	if debug > 0 {
-		fmt.Printf(sql)
-	}
-	db.MustExec(sql)
-
-	//db.MustExec(fmt.Sprintf("CREATE UNIQUE INDEX uniq1 ON tags(%s)", strings.Join(tags, ",")))
-	//db.MustExec(fmt.Sprintf("CREATE INDEX ON tags(%s)", tags[0]))
 }

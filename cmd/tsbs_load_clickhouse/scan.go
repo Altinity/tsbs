@@ -8,11 +8,12 @@ import (
 	"github.com/timescale/tsbs/load"
 )
 
-// hostnameIndexer is used to consistently send the same hostnames to the same worker
+// hostnameIndexer is used to consistently send the same hostnames to the same queue
 type hostnameIndexer struct {
 	partitions uint
 }
 
+// scan.PointIndexer interface implementation
 func (i *hostnameIndexer) GetIndex(item *load.Point) int {
 	p := item.Data.(*point)
 	hostname := strings.SplitN(p.row.tags, ",", 2)[0]
@@ -30,24 +31,29 @@ type point struct {
 	row   *insertData
 }
 
+// scan.Batch interface implementation
 type tableArr struct {
 	m   map[string][]*insertData
 	cnt int
 }
 
-func (ha *tableArr) Len() int {
-	return ha.cnt
+// scan.Batch interface implementation
+func (ta *tableArr) Len() int {
+	return ta.cnt
 }
 
-func (ha *tableArr) Append(item *load.Point) {
+// scan.Batch interface implementation
+func (ta *tableArr) Append(item *load.Point) {
 	that := item.Data.(*point)
 	k := that.table
-	ha.m[k] = append(ha.m[k], that.row)
-	ha.cnt++
+	ta.m[k] = append(ta.m[k], that.row)
+	ta.cnt++
 }
 
+// scan.BatchFactory interface implementation
 type factory struct{}
 
+// scan.BatchFactory interface implementation
 func (f *factory) New() load.Batch {
 	return &tableArr{
 		m:   map[string][]*insertData{},
@@ -55,12 +61,14 @@ func (f *factory) New() load.Batch {
 	}
 }
 
+// scan.PointDecoder interface implementation
 type decoder struct {
 	scanner *bufio.Scanner
 }
 
 const tagsPrefix = "tags"
 
+// scan.PointDecoder interface implementation
 func (d *decoder) Decode(_ *bufio.Reader) *load.Point {
 	// Data Point Example
 	// tags,hostname=host_0,region=eu-west-1,datacenter=eu-west-1b,rack=67,os=Ubuntu16.10,arch=x86,team=NYC,service=7,service_version=0,service_environment=production
@@ -68,7 +76,8 @@ func (d *decoder) Decode(_ *bufio.Reader) *load.Point {
 
 	data := &insertData{}
 	ok := d.scanner.Scan()
-	if !ok && d.scanner.Err() == nil { // nothing scanned & no error = EOF
+	if !ok && d.scanner.Err() == nil {
+		// nothing scanned & no error = EOF
 		return nil
 	} else if !ok {
 		fatal("scan error: %v", d.scanner.Err())

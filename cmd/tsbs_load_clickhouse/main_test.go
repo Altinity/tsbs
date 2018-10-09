@@ -31,7 +31,7 @@ func TestGetConnectString(t *testing.T) {
 	for _, c := range cases {
 		host = wantHost
 		user = wantUser
-		clickhouseConnect = c.chConnect
+		chConnectString = c.chConnect
 		cstr := getConnectString()
 		if cstr != want {
 			t.Errorf("%s: incorrect connect string: got %s want %s", c.desc, cstr, want)

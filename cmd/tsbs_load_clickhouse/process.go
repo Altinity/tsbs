@@ -52,11 +52,20 @@ func insertTags(db *sqlx.DB, tagRows [][]string, returnResults bool) map[string]
 	cols := tagCols
 
 	// reflect tags table structure which is
-	//CREATE TABLE tags(
-	//	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	//	id,
-	//  %s
-	//) engine=MergeTree(created_at, (%s), 8192)
+	// CREATE TABLE tags(
+	//	 created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	//	 id,
+	//   %s
+	// ) engine=MergeTree(created_at, (%s), 8192)
+
+	// build insert-multiple-rows INSERT statement like:
+	// INSERT INTO tags (
+	//   ... list of column names ...
+	// ) VALUES
+	// ( ... row 1 values ... ),
+	// ( ... row 2 values ... ),
+	// ...
+	// ( ... row N values ... ),
 
 	values := make([]string, 0)
 	commonTagsLen := len(tagCols)
@@ -119,9 +128,9 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	}
 
 	for _, data := range rows {
-		// Split the tags into individual common tags and an extra bit leftover
-		// for non-common tags that need to be added separately. For each of
-		// the common tags, remove everything after = in the form <label>=<val>
+		// Split the tags into individual common tags and
+		// an extra bit leftover for non-common tags that need to be added separately.
+		// For each of the common tags, remove everything after = in the form <label>=<val>
 		// since we won't need it.
 		// tags line ex.:
 		// hostname=host_0,region=eu-west-1,datacenter=eu-west-1b,rack=67,os=Ubuntu16.10,arch=x86,team=NYC,service=7,service_version=0,service_environment=production
@@ -138,7 +147,7 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 		// fields line ex.:
 		// 1451606400000000000,58,2,24,61,22,63,6,44,80,38
 		metrics := strings.Split(data.fields, ",")
-		ret += uint64(len(metrics) - 1) // 1 field is timestamp
+		ret += uint64(len(metrics) - 1) // 1-st field is timestamp
 
 		// convert time from 1451606400000000000 to '2006-01-02 15:04:05.999999 -0700'
 		timeInt, err := strconv.ParseInt(metrics[0], 10, 64)
@@ -170,6 +179,7 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 		}
 	}
 	p.csi.mutex.RUnlock()
+
 	if len(newTags) > 0 {
 		p.csi.mutex.Lock()
 		res := insertTags(p.db, newTags, true)
@@ -216,11 +226,13 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	return ret
 }
 
+// load.Processor interface implementation
 type processor struct {
 	db  *sqlx.DB
 	csi *syncCSI
 }
 
+// load.Processor interface implementation
 func (p *processor) Init(workerNum int, doLoad bool) {
 	if doLoad {
 		p.db = sqlx.MustConnect(dbType, getConnectString())
@@ -232,12 +244,14 @@ func (p *processor) Init(workerNum int, doLoad bool) {
 	}
 }
 
+// load.ProcessorCloser interface implementation
 func (p *processor) Close(doLoad bool) {
 	if doLoad {
 		p.db.Close()
 	}
 }
 
+// load.Processor interface implementation
 func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	batches := b.(*tableArr)
 	rowCnt := 0
@@ -258,5 +272,6 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	}
 	batches.m = map[string][]*insertData{}
 	batches.cnt = 0
+
 	return metricCnt, uint64(rowCnt)
 }
