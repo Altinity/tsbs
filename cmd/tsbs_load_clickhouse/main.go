@@ -6,10 +6,7 @@ package main
 import (
 	"bufio"
 	"flag"
-	"fmt"
 	"log"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/timescale/tsbs/load"
@@ -23,7 +20,6 @@ const (
 
 // Program option vars:
 var (
-	chConnectString string
 	host            string
 	user            string
 	password        string
@@ -65,7 +61,6 @@ var fatal = log.Fatalf
 func init() {
 	loader = load.GetBenchmarkRunner()
 
-	flag.StringVar(&chConnectString, "clickhouse", "tcp://127.0.0.1:9000?debug=true", "ClickHouse connection string")
 	flag.StringVar(&host, "host", "localhost", "Hostname of ClickHouse instance")
 	flag.StringVar(&user, "user", "default", "User to connect to ClickHouse as")
 	flag.StringVar(&password, "password", "", "Password to connect to ClickHouse")
@@ -138,13 +133,4 @@ func main() {
 	} else {
 		loader.RunBenchmark(&benchmark{}, load.SingleQueue)
 	}
-}
-
-func getConnectString() string {
-	// User might be passing in host=hostname the connect string out of habit which may override the
-	// multi host configuration. Same for dbname= and user=. This sanitizes that.
-	re := regexp.MustCompile(`(host|dbname|user|password)=\S*\b`)
-	connectString := strings.TrimSpace(re.ReplaceAllString(chConnectString, ""))
-
-	return fmt.Sprintf("host=%s dbname=%s user=%s password=%s %s", host, loader.DatabaseName(), user, password, connectString)
 }

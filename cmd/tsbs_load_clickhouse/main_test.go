@@ -7,34 +7,16 @@ import (
 
 func TestGetConnectString(t *testing.T) {
 	wantHost := "localhost"
-	wantDB := "benchmark"
 	wantUser := "default"
-	want := fmt.Sprintf("host=%s dbname=%s user=%s", wantHost, wantDB, wantUser)
-	cases := []struct {
-		desc      string
-		chConnect string
-	}{
-		{
-			desc:      "replace host, dbname, user",
-			chConnect: "host=foo dbname=bar user=joe",
-		},
-		{
-			desc:      "replace just some",
-			chConnect: "host=foo dbname=bar",
-		},
-		{
-			desc:      "no replace",
-			chConnect: "",
-		},
-	}
+	wantPassword := ""
+	wantDB := "benchmark"
+	want := fmt.Sprintf("tcp://%s:9000?username=%s&password=%s&database=%s", wantHost, wantUser, wantPassword, wantDB)
 
-	for _, c := range cases {
-		host = wantHost
-		user = wantUser
-		chConnectString = c.chConnect
-		cstr := getConnectString()
-		if cstr != want {
-			t.Errorf("%s: incorrect connect string: got %s want %s", c.desc, cstr, want)
-		}
+	host = wantHost
+	user = wantUser
+	password = wantPassword
+	connStr := getConnectString(true)
+	if connStr != want {
+		t.Errorf("incorrect connect string: got %s want %s", connStr, want)
 	}
 }
