@@ -9,11 +9,21 @@ import (
 
 // statProcessor is used to collect, analyze, and print query execution statistics.
 type statProcessor struct {
-	prewarmQueries bool       // PrewarmQueries tells the StatProcessor whether we're running each query twice to prewarm the cache
-	c              chan *Stat // c is the channel for Stats to be sent for processing
-	limit          *uint64    // limit is the number of statistics to analyze before stopping
-	burnIn         uint64     // burnIn is the number of statistics to ignore before analyzing
-	printInterval  uint64     // printInterval is how often print intermediate stats (number of queries)
+	// Tells the StatProcessor whether we're running each query twice to prewarm the cache
+	prewarmQueries bool
+
+	// Channel for Stats to be sent for processing
+	ch             chan *Stat
+
+	// Number of statistics to analyze before stopping
+	limit          *uint64
+
+	// Number of statistics to ignore before analyzing
+	burnIn         uint64
+
+	// How often print intermediate stats (number of queries)
+	printInterval  uint64
+
 	wg             sync.WaitGroup
 }
 
@@ -22,8 +32,8 @@ func (sp *statProcessor) sendStats(stats []*Stat) {
 		return
 	}
 
-	for _, s := range stats {
-		sp.c <- s
+	for _, stat := range stats {
+		sp.ch <- stat
 	}
 }
 
@@ -32,16 +42,16 @@ func (sp *statProcessor) sendStatsWarm(stats []*Stat) {
 		return
 	}
 
-	for _, s := range stats {
-		s.isWarm = true
+	for _, stat := range stats {
+		stat.isWarm = true
 	}
 	sp.sendStats(stats)
 }
 
-// process collects latency results, aggregating them into summary
-// statistics. Optionally, they are printed to stderr at regular intervals.
+// process collects latency results, aggregating them into summary statistics.
+// Optionally, they are printed to stderr at regular intervals.
 func (sp *statProcessor) process(workers uint) {
-	sp.c = make(chan *Stat, workers)
+	sp.ch = make(chan *Stat, workers)
 	sp.wg.Add(1)
 	const allQueriesLabel = labelAllQueries
 	statMapping := map[string]*statGroup{
@@ -54,7 +64,7 @@ func (sp *statProcessor) process(workers uint) {
 	}
 
 	i := uint64(0)
-	for stat := range sp.c {
+	for stat := range sp.ch {
 		if i < sp.burnIn {
 			i++
 			statPool.Put(stat)
@@ -84,8 +94,8 @@ func (sp *statProcessor) process(workers uint) {
 			}
 
 			// If we're prewarming queries (i.e., running them twice in a row),
-			// only increment the counter for the first (cold) query. Otherwise,
-			// increment for every query.
+			// only increment the counter for the first (cold) query.
+			// Otherwise, increment for every query.
 			if !sp.prewarmQueries || !stat.isWarm {
 				i++
 			}
@@ -94,7 +104,7 @@ func (sp *statProcessor) process(workers uint) {
 		statPool.Put(stat)
 
 		// print stats to stderr (if printInterval is greater than zero):
-		if sp.printInterval > 0 && i > 0 && i%sp.printInterval == 0 && (i < *sp.limit || *sp.limit == 0) {
+		if sp.printInterval > 0 && i > 0 && i % sp.printInterval == 0 && (i < *sp.limit || *sp.limit == 0) {
 			_, err := fmt.Fprintf(os.Stderr, "after %d queries with %d workers:\n", i-sp.burnIn, workers)
 			if err != nil {
 				log.Fatal(err)
@@ -118,6 +128,6 @@ func (sp *statProcessor) process(workers uint) {
 
 // CloseAndWait closes the stats channel and blocks until the StatProcessor has finished all the stats on its channel.
 func (sp *statProcessor) CloseAndWait() {
-	close(sp.c)
+	close(sp.ch)
 	sp.wg.Wait()
 }

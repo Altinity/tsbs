@@ -14,9 +14,9 @@ func TestStatProcessorSendStats(t *testing.T) {
 	}
 	s.value = 10.1
 	sp := &statProcessor{}
-	sp.c = make(chan *Stat, 2)
+	sp.ch = make(chan *Stat, 2)
 	sp.sendStats([]*Stat{s, s})
-	r := <-sp.c
+	r := <-sp.ch
 	if r.value != s.value {
 		t.Errorf("sent a stat and got a different one back")
 	}
@@ -25,7 +25,7 @@ func TestStatProcessorSendStats(t *testing.T) {
 	}
 
 	// 2nd value too
-	r = <-sp.c
+	r = <-sp.ch
 	if r.value != s.value {
 		t.Errorf("sent a stat and got a different one back (2)")
 	}
@@ -41,9 +41,9 @@ func TestStatProcessorSendStatsWarm(t *testing.T) {
 	}
 	s.value = 10.1
 	sp := &statProcessor{}
-	sp.c = make(chan *Stat, 2)
+	sp.ch = make(chan *Stat, 2)
 	sp.sendStatsWarm([]*Stat{s, s})
-	r := <-sp.c
+	r := <-sp.ch
 	if r.value != s.value {
 		t.Errorf("sent a stat and got a different one back")
 	}
@@ -52,7 +52,7 @@ func TestStatProcessorSendStatsWarm(t *testing.T) {
 	}
 
 	// 2nd value too
-	r = <-sp.c
+	r = <-sp.ch
 	if r.value != s.value {
 		t.Errorf("sent a stat and got a different one back (2)")
 	}

@@ -58,7 +58,7 @@ type BenchmarkRunner struct {
 	doCreateDB      bool
 	doAbortOnExist  bool
 	reportingPeriod time.Duration
-	fileName        string // TODO implement file reading
+	fileName        string
 
 	// non-flag fields
 	br        *bufio.Reader
