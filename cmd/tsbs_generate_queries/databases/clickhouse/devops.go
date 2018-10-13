@@ -9,7 +9,7 @@ import (
 	"github.com/timescale/tsbs/query"
 )
 
-// Devops produces TimescaleDB-specific queries for all the devops query types.
+// Devops produces ClickHouse-specific queries for all the devops query types.
 type Devops struct {
 	*devops.Core
 	UseTags bool
@@ -17,12 +17,15 @@ type Devops struct {
 
 // NewDevops makes an Devops object ready to generate Queries.
 func NewDevops(start, end time.Time, scale int) *Devops {
-	return &Devops{devops.NewCore(start, end, scale), false}
+	return &Devops{
+		devops.NewCore(start, end, scale),
+		false,
+	}
 }
 
-// GenerateEmptyQuery returns an empty query.TimescaleDB
+// GenerateEmptyQuery returns an empty query.ClickHouse
 func (d *Devops) GenerateEmptyQuery() query.Query {
-	return query.NewTimescaleDB()
+	return query.NewClickHouse()
 }
 
 // getHostWhereWithHostnames creates WHERE SQL statement for multiple hostnames.
@@ -67,7 +70,7 @@ const goTimeFmt = "2006-01-02 15:04:05.999999 -0700"
 
 // GroupByTime selects the MAX for numMetrics metrics under 'cpu',
 // per minute for nhosts hosts,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT minute, max(metric1), ..., max(metricN)
 // FROM cpu
@@ -139,7 +142,7 @@ func (d *Devops) GroupByOrderByLimit(qi query.Query) {
 }
 
 // GroupByTimeAndPrimaryTag selects the AVG of numMetrics metrics under 'cpu' per device per hour for a day,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT AVG(metric1), ..., AVG(metricN)
 // FROM cpu
@@ -286,7 +289,7 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 
 // HighCPUForHosts populates a query that gets CPU metrics when the CPU has high
 // usage between a time period for a number of hosts (if 0, it will search all hosts),
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT * FROM cpu
 // WHERE usage_user > 90.0
