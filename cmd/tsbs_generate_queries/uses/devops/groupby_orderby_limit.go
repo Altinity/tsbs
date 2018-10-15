@@ -12,7 +12,9 @@ type GroupByOrderByLimit struct {
 
 // NewGroupByOrderByLimit returns a new GroupByOrderByLimit for given paremeters
 func NewGroupByOrderByLimit(core utils.DevopsGenerator) utils.QueryFiller {
-	return &GroupByOrderByLimit{core}
+	return &GroupByOrderByLimit{
+		core,
+	}
 }
 
 // Fill fills in the query.Query with query details

@@ -20,6 +20,7 @@ import (
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/devops"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/utils"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/clickhouse"
+	"io"
 )
 
 var useCaseMatrix = map[string]map[string]utils.QueryFillerMaker{
@@ -48,6 +49,7 @@ var (
 	filler    utils.QueryFiller
 
 	queryCount int
+	fileName   string
 
 	seed  int64
 	debug int
@@ -101,8 +103,12 @@ func init() {
 		}
 	}
 
-	var useCase, queryType, format, timestampStartStr, timestampEndStr string
-	var scaleVar int
+	var format            string
+	var useCase           string
+	var queryType         string
+	var scaleVar          int
+	var timestampStartStr string
+	var timestampEndStr   string
 
 	flag.StringVar(&format, "format", "", "Format to emit. (Choices are in the use case matrix.)")
 	flag.StringVar(&useCase, "use-case", "", "Use case to model. (Choices are in the use case matrix.)")
@@ -124,6 +130,8 @@ func init() {
 
 	flag.UintVar(&interleavedGenerationGroupID, "interleaved-generation-group-id", 0, "Group (0-indexed) to perform round-robin serialization within. Use this to scale up data generation to multiple processes.")
 	flag.UintVar(&interleavedGenerationGroups, "interleaved-generation-groups", 1, "The number of round-robin serialization groups. Use this to scale up data generation to multiple processes.")
+
+	flag.StringVar(&fileName, "file", "", "Name of file to write")
 
 	flag.Parse()
 
@@ -168,8 +176,21 @@ func main() {
 	// Set up bookkeeping:
 	stats := make(map[string]int64)
 
+	var out  *bufio.Writer
+	var file io.Writer
+	if len(fileName) > 0 {
+		// Write output to file
+		file, err := os.Create(fileName)
+		if err != nil {
+			panic("cannot open file " + fileName)
+		}
+		defer file.Close()
+	} else {
+		// Write output to STDOUT
+		file = os.Stdout
+	}
 	// Set up output buffering:
-	out := bufio.NewWriter(os.Stdout)
+	out = bufio.NewWriter(file)
 	defer out.Flush()
 
 	// Create request instances, serializing them to stdout and collecting

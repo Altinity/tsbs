@@ -22,22 +22,22 @@ const (
 	// DoubleGroupByDuration is the how big the time range for DoubleGroupBy query is
 	DoubleGroupByDuration = 12 * time.Hour
 	// HighCPUDuration is the how big the time range for HighCPU query is
-	HighCPUDuration = 12 * time.Hour
+	HighCPUDuration       = 12 * time.Hour
 	// MaxAllDuration is the how big the time range for MaxAll query is
-	MaxAllDuration = 8 * time.Hour
+	MaxAllDuration        = 8 * time.Hour
 
 	// LabelSingleGroupby is the label prefix for queries of the single groupby variety
-	LabelSingleGroupby = "single-groupby"
+	LabelSingleGroupby       = "single-groupby"
 	// LabelDoubleGroupby is the label prefix for queries of the double groupby variety
-	LabelDoubleGroupby = "double-groupby"
+	LabelDoubleGroupby       = "double-groupby"
 	// LabelLastpoint is the label for the lastpoint query
-	LabelLastpoint = "lastpoint"
+	LabelLastpoint           = "lastpoint"
 	// LabelMaxAll is the label prefix for queries of the max all variety
-	LabelMaxAll = "cpu-max-all"
+	LabelMaxAll              = "cpu-max-all"
 	// LabelGroupbyOrderbyLimit is the label for groupby-orderby-limit query
 	LabelGroupbyOrderbyLimit = "groupby-orderby-limit"
 	// LabelHighCPU is the prefix for queries of the high-CPU variety
-	LabelHighCPU = "high-cpu"
+	LabelHighCPU             = "high-cpu"
 )
 
 // for ease of testing
@@ -58,7 +58,10 @@ func NewCore(start, end time.Time, scale int) *Core {
 		return nil
 	}
 
-	return &Core{utils.NewTimeInterval(start, end), scale}
+	return &Core{
+		utils.NewTimeInterval(start, end),
+		scale,
+	}
 }
 
 // GetRandomHosts returns a random set of nHosts from a given Core

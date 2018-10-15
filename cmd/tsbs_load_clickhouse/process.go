@@ -101,7 +101,7 @@ func insertTags(db *sqlx.DB, startId int, tagRows [][]string, returnResults bool
 		id++
 
 		// unfortunately, it is not possible to pass a slice into variadic function of type interface
-		// mpore details on the item:
+		// more details on the item:
 		// https://blog.learngoprogramming.com/golang-variadic-funcs-how-to-patterns-369408f19085
 		// Passing a slice to variadic param with an empty-interface
 		// +1 is here for id
@@ -150,6 +150,8 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 		colLen++
 	}
 
+	var tagsIdPosition int = 0
+
 	for _, data := range rows {
 		// Split the tags into individual common tags and
 		// an extra bit leftover for non-common tags that need to be added separately.
@@ -194,20 +196,30 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 		// )
 
 		// Build string TimeStamp as '2006-01-02 15:04:05.999999 -0700'
-		// convert time from 1451606400000000000 to '2006-01-02 15:04:05.999999 -0700'
-		timeInt, err := strconv.ParseInt(metrics[0], 10, 64)
+		// convert time from 1451606400000000000 (int64 UNIX TIMESTAMP with nanoseconds)
+		timestampNano, err := strconv.ParseInt(metrics[0], 10, 64)
 		if err != nil {
 			panic(err)
 		}
-		ts := time.Unix(0, timeInt).Format("2006-01-02 15:04:05.999999 -0700")
+		timeUTC    := time.Unix(0, timestampNano)
+		TimeUTCStr := timeUTC.Format("2006-01-02 15:04:05.999999 -0700")
 
 		// use nil at 2-nd position as placeholder for tagKey
 		r := make([]interface{}, 0, colLen)
 		// First columns in table are
+		// created_date
+		// created_at
 		// time
-		// tags_id
+		// tags_id - would be nil for now
 		// additional_tags
-		r = append(r, ts, nil, json)
+		tagsIdPosition = 3 // what is the position of the tags_id in the row - nil value
+		r = append(r,
+			timeUTC,	// created_date
+			timeUTC,	// created_at
+			TimeUTCStr,	// time
+			nil,		// tags_id
+			json)		// additional_tags
+
 		if inTableTag {
 			r = append(r, tags[0]) // tags[0] = hostname
 		}
@@ -254,21 +266,24 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	for i := range dataRows {
 		// tagKey = hostname
 		tagKey := tagRows[i][0]
-		// Insert id of the tag (tags.id) for this host into 1-st position of the dataRows record
-		dataRows[i][1] = p.csi.m[tagKey]
+		// Insert id of the tag (tags.id) for this host into tags_id position of the dataRows record
+		// refers to
+		// nil,		// tags_id
+
+		dataRows[i][tagsIdPosition] = p.csi.m[tagKey]
 	}
 	p.csi.mutex.RUnlock()
 
 
 	// Prepare column names
 	cols := make([]string, 0, colLen)
-	// First columns would be "time", "tags_id", "additional_tags"
+	// First columns would be "created_date", "created_at", "time", "tags_id", "additional_tags"
 	// Inspite of "additional_tags" being added the last one in CREATE TABLE stmt
 	// it goes as a third one here - because we can move columns - they are named
 	// and it is easier to keep variable coumns at the end of the list
-	cols = append(cols, "time", "tags_id", "additional_tags")
+	cols = append(cols, "created_date", "created_at", "time", "tags_id", "additional_tags")
 	if inTableTag {
-		cols = append(cols, tableCols["tags"][0])
+		cols = append(cols, tableCols["tags"][0]) // hostname
 	}
 	cols = append(cols, tableCols[tableName]...)
 
