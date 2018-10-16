@@ -1,7 +1,6 @@
 // tsbs_run_queries_clickhouse speed tests ClickHouse using requests from stdin or file.
 //
-// It reads encoded Query objects from stdin or file, and makes concurrent requests
-// to the provided ClickHouse endpoint.
+// It reads encoded Query objects from stdin or file, and makes concurrent requeststo the provided ClickHouse endpoint.
 // This program has no knowledge of the internals of the endpoint.
 package main
 
@@ -19,10 +18,10 @@ import (
 
 // Program option vars:
 var (
-	chConnect   string
-	hostList    []string
-	user        string
-	password    string
+	chConnect string
+	hostsList []string
+	user      string
+	password  string
 
 	showExplain bool
 )
@@ -37,9 +36,10 @@ func init() {
 	runner = query.NewBenchmarkRunner()
 	var hosts string
 
-	flag.StringVar(&chConnect, "postgres", "host=postgres user=postgres sslmode=disable",
-		"String of additional ClickHouse connection parameters, e.g., 'sslmode=disable'. Parameters for host and database will be ignored.")
-	flag.StringVar(&hosts, "hosts", "localhost", "Comma separated list of ClickHouse hosts (pass multiple values for sharding reads on a multi-node setup)")
+	flag.StringVar(&chConnect, "additional-params", "sslmode=disable",
+		"String of additional ClickHouse connection parameters, e.g., 'sslmode=disable'.")
+	flag.StringVar(&hosts, "hosts", "localhost",
+		"Comma separated list of ClickHouse hosts (pass multiple values for sharding reads on a multi-node setup)")
 	flag.StringVar(&user, "user", "default", "User to connect to ClickHouse as")
 	flag.StringVar(&password, "password", "", "Password to connect to ClickHouse")
 
@@ -53,7 +53,7 @@ func init() {
 
 	// Parse comma separated string of hosts and put in a slice (for multi-node setups)
 	for _, host := range strings.Split(hosts, ",") {
-		hostList = append(hostList, host)
+		hostsList = append(hostsList, host)
 	}
 }
 
@@ -68,7 +68,7 @@ func main() {
 // to evenly distribute hosts to worker connections
 func getConnectString(workerNumber int) string {
 	// Round robin the host/worker assignment by assigning a host based on workerNumber % totalNumberOfHosts
-	host := hostList[workerNumber % len(hostList)]
+	host := hostsList[workerNumber % len(hostsList)]
 
 	return fmt.Sprintf("tcp://%s:9000?username=%s&password=%s&database=%s", host, user, password, runner.DatabaseName())
 }
@@ -131,13 +131,19 @@ func (p *processor) ProcessQuery(q query.Query, isWarm bool) ([]*query.Stat, err
 	if isWarm && p.opts.showExplain {
 		return nil, nil
 	}
-	tq := q.(*query.ClickHouse)
+
+	// Ensure ClickHouse query
+	chQuery := q.(*query.ClickHouse)
 
 	start := time.Now()
-	sql := string(tq.SqlQuery)
+
+	// SqlQuery is []byte, so cast is needed
+	sql := string(chQuery.SqlQuery)
 	if showExplain {
 		sql = "EXPLAIN ANALYZE " + sql
 	}
+
+	// Main action - run the query
 	rows, err := p.db.Queryx(sql)
 	if err != nil {
 		return nil, err
@@ -157,10 +163,11 @@ func (p *processor) ProcessQuery(q query.Query, isWarm bool) ([]*query.Stat, err
 		}
 		fmt.Printf("%s\n\n%s\n-----\n\n", sql, text)
 	} else if p.opts.printResponse {
-		prettyPrintResponse(rows, tq)
+		prettyPrintResponse(rows, chQuery)
 	}
 	rows.Close()
 	took := float64(time.Since(start).Nanoseconds()) / 1e6
+
 	stat := query.GetStat()
 	stat.Init(q.HumanLabelName(), took)
 

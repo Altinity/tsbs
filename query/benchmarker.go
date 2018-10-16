@@ -29,7 +29,7 @@ type BenchmarkRunner struct {
 	workers        uint
 	printResponses bool
 	debug          int
-	fileName        string
+	fileName       string
 
 	// non-flag fields
 	br            *bufio.Reader
@@ -133,6 +133,7 @@ func (b *BenchmarkRunner) Run(queryPool *sync.Pool, processorCreateFn ProcessorC
 	}
 
 	// Read in jobs, closing the job channel when done:
+	// Wall clock start time
 	wallStart := time.Now()
 	b.scanner.setReader(b.GetBufferedReader()).scan(queryPool, b.ch)
 	close(b.ch)
@@ -141,6 +142,7 @@ func (b *BenchmarkRunner) Run(queryPool *sync.Pool, processorCreateFn ProcessorC
 	wg.Wait()
 	b.statProcessor.CloseAndWait()
 
+	// Wall clock end time
 	wallEnd := time.Now()
 	wallTook := wallEnd.Sub(wallStart)
 	_, err := fmt.Printf("wall clock time: %fsec\n", float64(wallTook.Nanoseconds())/1e9)

@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// ClickHouse encodes a ClickHouse request.
+// ClickHouse encodes a ClickHouse query.
 // This will be serialized for use by the tsbs_run_queries_clickhouse program.
 type ClickHouse struct {
 	HumanLabel       []byte

@@ -47,6 +47,7 @@ var fatal = log.Fatalf
 type Core struct {
 	// Interval is the entire time range of the dataset
 	Interval utils.TimeInterval
+
 	// Scale is the cardinality of the dataset in terms of devices/hosts
 	Scale int
 }
@@ -66,7 +67,7 @@ func NewCore(start, end time.Time, scale int) *Core {
 
 // GetRandomHosts returns a random set of nHosts from a given Core
 func (d *Core) GetRandomHosts(nHosts int) []string {
-	return getRandomHosts(d.Scale, nHosts)
+	return getRandomHosts(nHosts, d.Scale)
 }
 
 // cpuMetrics is the list of metric names for CPU
@@ -160,41 +161,45 @@ func GetMaxAllLabel(dbName string, nHosts int) string {
 	return fmt.Sprintf("%s max of all CPU metrics, random %4d hosts, random %s by 1h", dbName, nHosts, MaxAllDuration)
 }
 
-func getRandomHosts(scale, nHosts int) []string {
-	if nHosts < 1 {
-		fatal("number of hosts cannot be < 1; got %d", nHosts)
+// getRandomHosts returns a subset of numHosts hostnames of a permutation of hostnames,
+// numbered from 0 to totalHostsScale.
+// Ex.: host_12, host_7, host_22 for numHosts=3 and totlaHostsScale=30
+func getRandomHosts(numHosts int, totalHostsScale int) []string {
+	if numHosts < 1 {
+		fatal("number of hosts cannot be < 1; got %d", numHosts)
 		return nil
 	}
-	if nHosts > scale {
-		fatal("number of hosts (%d) larger than --scale-var (%d)", nHosts, scale)
+	if numHosts > totalHostsScale {
+		fatal("number of hosts (%d) larger than --totalHostsScale-var (%d)", numHosts, totalHostsScale)
 		return nil
 	}
 
-	nn := getRandomSubsetPerm(scale, nHosts)
+	randomNumbers := getRandomSubsetPermutation(numHosts, totalHostsScale)
 
 	hostnames := []string{}
-	for _, n := range nn {
+	for _, n := range randomNumbers {
 		hostnames = append(hostnames, fmt.Sprintf("host_%d", n))
 	}
 
 	return hostnames
 }
 
-// getRandomSubsetPerm returns a subset of nItems of a permutation of numbers
-// from 0 to scale. This is an alternative to rand.Perm and then taking a
-// sub-slice, which used up a lot more memory and slowed down query generation
-// significantly. The subset of the permutation should have no duplicates.
-func getRandomSubsetPerm(scale, nItems int) []int {
-	if nItems > scale {
+// getRandomSubsetPermutation returns a subset of numItems of a permutation of numbers from 0 to totalNumbersScale.
+// This is an alternative to rand.Perm and then taking a/ sub-slice, which used up a lot more memory
+// and slowed down query generation significantly.
+// The subset of the permutation should have no duplicates.
+func getRandomSubsetPermutation(numItems int, totalItemsScale int) []int {
+	if numItems > totalItemsScale {
+		// Do not have so many items - can't do it
 		fatal(errMoreItemsThanScale)
 		return nil
 	}
 
 	seen := map[int]bool{}
 	res := []int{}
-	for i := 0; i < nItems; i++ {
+	for i := 0; i < numItems; i++ {
 		for {
-			n := rand.Intn(scale)
+			n := rand.Intn(totalItemsScale)
 			// Keep iterating until a previously unseen int is found
 			if !seen[n] {
 				seen[n] = true

@@ -11,7 +11,7 @@ DATA_FILE=${DATA_FILE:-${BULK_DATA_DIR}/${DATA_FILE_NAME}}
 
 # Load parameters
 BATCH_SIZE=${BATCH_SIZE:-10000}
-NUM_WORKERS=${NUM_WORKERS:-8}  # match # of cores
+NUM_WORKERS=${NUM_WORKERS:-$(grep -c ^processor /proc/cpuinfo)}  # match # of cores - worker per core
 BACKOFF_SECS=${BACKOFF_SECS:-1s}
 
 # Ensure data file is in place

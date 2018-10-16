@@ -1,8 +1,8 @@
 '''Generates bash scripts to run benchmarks for a variety of databases.
 
-This script generates a bash script that can be run as part of a benchmarking
-pipline. The output of the script relies on load_* scripts in the same directory
-for inserting, and on Go binaries generated from Influx's benchmark suite.
+This script generates a bash script that can be run as part of a benchmarking pipeline.
+The output of the script relies on load_* scripts in the same directory for inserting,
+and on Go binaries generated from Influx's benchmark suite.
 
 Usage flags:
     -b      Sets the batch size for inserting (default: 10000)

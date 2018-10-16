@@ -31,25 +31,29 @@ func (d *Devops) GenerateEmptyQuery() query.Query {
 // getHostWhereWithHostnames creates WHERE SQL statement for multiple hostnames.
 // NB 'WHERE' itself is not included, just hostname filter clauses, ready to concatenate to 'WHERE' string
 func (d *Devops) getHostWhereWithHostnames(hostnames []string) string {
-	hostnameClauses := []string{}
+	hostnameSelectionClauses := []string{}
 
 	if d.UseTags {
 		// Use separated table for Tags
 		// Need to prepare WHERE with `tags` table
 		// WHERE tags_id IN (SELECT those tag.id FROM separated tags table WHERE )
 		for _, s := range hostnames {
-			hostnameClauses = append(hostnameClauses, fmt.Sprintf("'%s'", s))
+			hostnameSelectionClauses = append(hostnameSelectionClauses, fmt.Sprintf("'%s'", s))
 		}
-		return fmt.Sprintf("tags_id IN (SELECT id FROM tags WHERE hostname IN (%s))", strings.Join(hostnameClauses, ","))
+		return fmt.Sprintf("tags_id IN (SELECT id FROM tags WHERE hostname IN (%s))", strings.Join(hostnameSelectionClauses, ","))
 	}
+
+	// Here we DO NOT use tags as a separate table
+	// So hostname is embedded into processed table itself and we can build direct WHERE statement as
+	// ((hostname = 'H1') OR (hostname = 'H2') ...)
 
 	// All tags are included into one table
 	// Need to prepare WHERE (hostname = 'host1' OR hostname = 'host2') clause
 	for _, s := range hostnames {
-		hostnameClauses = append(hostnameClauses, fmt.Sprintf("hostname = '%s'", s))
+		hostnameSelectionClauses = append(hostnameSelectionClauses, fmt.Sprintf("hostname = '%s'", s))
 	}
 	// (host=h1 OR host=h2)
-	return "(" + strings.Join(hostnameClauses, " OR ") + ")"
+	return "(" + strings.Join(hostnameSelectionClauses, " OR ") + ")"
 }
 
 // getHostWhereString gets multiple random hostnames and create WHERE SQL statement for these hostnames.
@@ -58,15 +62,18 @@ func (d *Devops) getHostWhereString(nhosts int) string {
 	return d.getHostWhereWithHostnames(hostnames)
 }
 
-func (d *Devops) getSelectClausesAggMetrics(agg string, metrics []string) []string {
-	selectClauses := make([]string, len(metrics))
-	for i, m := range metrics {
-		selectClauses[i] = fmt.Sprintf("%[1]s(%[2]s) AS %[1]s_%[2]s", agg, m)
+// getSelectClausesAggMetrics gets specified aggregate function clause for multiple memtrics
+// Ex.: max(cpu_time) AS max_cpu_time
+func (d *Devops) getSelectClausesAggMetrics(aggregateFunction string, metrics []string) []string {
+	selectAggregateClauses := make([]string, len(metrics))
+	for i, metric := range metrics {
+		selectAggregateClauses[i] = fmt.Sprintf("%[1]s(%[2]s) AS %[1]s_%[2]s", aggregateFunction, metric)
 	}
-	return selectClauses
+	return selectAggregateClauses
 }
 
-const clickhouseTimeFmt = "2006-01-02 15:04:05"
+// ClickHouse understands and can compare time presented as strings of this format
+const clickhouseTimeStringFormat = "2006-01-02 15:04:05"
 
 // GroupByTime selects the MAX for numMetrics metrics under 'cpu',
 // per minute for nhosts hosts,
@@ -102,8 +109,8 @@ func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange t
 		`,
 		strings.Join(selectClauses, ", "),
 		d.getHostWhereString(nHosts),
-		interval.Start.Format(clickhouseTimeFmt),
-		interval.End.Format(clickhouseTimeFmt))
+		interval.Start.Format(clickhouseTimeStringFormat),
+		interval.End.Format(clickhouseTimeStringFormat))
 
 	humanLabel := fmt.Sprintf("ClickHouse %d cpu metric(s), random %4d hosts, random %s by 1m", numMetrics, nHosts, timeRange)
 	humanDesc  := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
@@ -134,7 +141,7 @@ func (d *Devops) GroupByOrderByLimit(qi query.Query) {
 		LIMIT
 			5
 		`,
-		interval.End.Format(clickhouseTimeFmt))
+		interval.End.Format(clickhouseTimeStringFormat))
 
 	humanLabel := "ClickHouse max cpu over last 5 min-intervals (random end)"
 	humanDesc  := fmt.Sprintf("%s: %s", humanLabel, interval.EndString())
@@ -161,10 +168,10 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 	}
 
 	hostnameField := "hostname"
-	joinStr := ""
+	joinClause := ""
 	if d.UseTags {
 		hostnameField = "tags.hostname"
-		joinStr = "JOIN tags ON cpu_avg.tags_id = tags.id"
+		joinClause = "JOIN tags ON cpu_avg.tags_id = tags.id"
 	}
 
 	sql := fmt.Sprintf(`
@@ -174,7 +181,7 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 			%s
         FROM (
 			SELECT
-				to StartOfHour(created_at) as hour,
+				toStartOfHour(created_at) as hour,
 				tags_id,
 				%s
 			FROM
@@ -191,13 +198,13 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 			hour,
 			%s
 		`,
-		hostnameField,                            // main SELECT %s,
-		strings.Join(meanClauses, ", "),          // main SELECT %s
-		strings.Join(selectClauses, ", "),        // cpu_avg SELECT %s
-		interval.Start.Format(clickhouseTimeFmt), // cpu_avg time >= '%s'
-		interval.End.Format(clickhouseTimeFmt),   // cpu_avg time < '%s'
-		joinStr,                                  // JOIN clause
-		hostnameField)							// ORDER BY %s
+		hostnameField,                                     // main SELECT %s,
+		strings.Join(meanClauses, ", "),              // main SELECT %s
+		strings.Join(selectClauses, ", "),            // cpu_avg SELECT %s
+		interval.Start.Format(clickhouseTimeStringFormat), // cpu_avg time >= '%s'
+		interval.End.Format(clickhouseTimeStringFormat),   // cpu_avg time < '%s'
+		joinClause,                                        // JOIN clause
+		hostnameField)							           // ORDER BY %s
 
 	humanLabel := devops.GetDoubleGroupByLabel("ClickHouse", numMetrics)
 	humanDesc  := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
@@ -237,8 +244,8 @@ func (d *Devops) MaxAllCPU(qi query.Query, nHosts int) {
 		`,
 		strings.Join(selectClauses, ", "),
 		d.getHostWhereString(nHosts),
-		interval.Start.Format(clickhouseTimeFmt),
-		interval.End.Format(clickhouseTimeFmt))
+		interval.Start.Format(clickhouseTimeStringFormat),
+		interval.End.Format(clickhouseTimeStringFormat))
 
 	humanLabel := devops.GetMaxAllLabel("ClickHouse", nHosts)
 	humanDesc  := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
@@ -315,8 +322,8 @@ func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
 			AND created_at <  '%s'
 			%s
 		`,
-		interval.Start.Format(clickhouseTimeFmt),
-		interval.End.Format(clickhouseTimeFmt),
+		interval.Start.Format(clickhouseTimeStringFormat),
+		interval.End.Format(clickhouseTimeStringFormat),
 		hostWhereClause)
 
 	humanLabel := devops.GetHighCPULabel("ClickHouse", nHosts)
@@ -324,7 +331,7 @@ func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }
 
-// fill Query fills teh query struct with data
+// fill Query fills the query struct with data
 func (d *Devops) fillInQuery(qi query.Query, humanLabel, humanDesc, sql string) {
 	q := qi.(*query.ClickHouse)
 	q.HumanLabel       = []byte(humanLabel)
