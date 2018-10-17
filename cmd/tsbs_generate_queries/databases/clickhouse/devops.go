@@ -164,15 +164,39 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 	meanClauses   := make([]string, numMetrics)
 	for i, m := range metrics {
 		meanClauses[i]   = "mean_" + m
-		selectClauses[i] = fmt.Sprintf("avg(%s) as %s", m, meanClauses[i])
+		selectClauses[i] = fmt.Sprintf("avg(%s) AS %s", m, meanClauses[i])
 	}
 
 	hostnameField := "hostname"
 	joinClause := ""
 	if d.UseTags {
-		hostnameField = "tags.hostname"
-		joinClause = "JOIN tags ON cpu_avg.tags_id = tags.id"
+		//hostnameField = "tags.hostname"
+		hostnameField = "hostname"
+		joinClause = "ANY INNER JOIN tags USING id"
 	}
+
+	// SELECT
+	//	hour,
+	//	hostname,
+	//	mean_usage_user
+	// FROM (
+	//	SELECT
+	//		toStartOfHour(created_at) AS hour,
+	//		tags_id                   AS id,
+	//		avg(usage_user)           AS mean_usage_user
+	//  FROM
+	//		cpu
+	//	WHERE
+	//			created_at >= '2016-01-02 11:22:40'
+	//     AND created_at <  '2016-01-02 23:22:40'
+    //	GROUP BY
+    //		hour,
+	//		id
+	// ) AS cpu_avg
+	// ANY INNER JOIN tags USING id
+	// ORDER BY
+	//	hour,
+	//	hostname
 
 	sql := fmt.Sprintf(`
         SELECT
@@ -181,8 +205,8 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 			%s
         FROM (
 			SELECT
-				toStartOfHour(created_at) as hour,
-				tags_id,
+				toStartOfHour(created_at) AS hour,
+				tags_id                   AS id,
 				%s
 			FROM
 				cpu
@@ -191,7 +215,7 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 				AND created_at <  '%s'
 			GROUP BY
 				hour,
-				tags_id
+				id
         ) AS cpu_avg
 		%s 
         ORDER BY
@@ -258,25 +282,49 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 	if d.UseTags {
 		sql = fmt.Sprintf(`
 			SELECT
-				DISTINCT(t.hostname), *
-			FROM
-				tags AS t
-			INNER JOIN (
+				id,
+				created_at,
+				any(hostname) 
+			FROM 
+			(
+        		SELECT
+					tags_id AS id,
+                	*
+        		FROM
+                	cpu
+			) ANY INNER JOIN (
 				SELECT
-					*
+					id,
+					hostname
 				FROM
-					cpu AS c
-				WHERE
-					c.tags_id = t.id
-				ORDER BY
-					created_at DESC
-				LIMIT
-					1
-			) AS b ON true 
+					tags
+			) USING id
+			GROUP BY
+				id, created_at
 			ORDER BY
-				t.hostname,
-				b.time DESC
+				id, created_at desc
+			LIMIT 1 BY id
 			`)
+		// SQL-like syntax would be
+		//	SELECT
+		//		DISTINCT(t.hostname), *
+		//	FROM
+		//		tags AS t
+		//	INNER JOIN (
+		//		SELECT
+		//			*
+		//		FROM
+		//			cpu AS c
+		//		WHERE
+		//			c.tags_id = t.id
+		//		ORDER BY
+		//			created_at DESC
+		//		LIMIT
+		//			1
+		//	) AS b ON true
+		//	ORDER BY
+		//		t.hostname,
+		//		b.time DESC
 	} else {
 		sql = fmt.Sprintf(`
 			SELECT
