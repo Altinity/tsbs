@@ -283,27 +283,18 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 		sql = fmt.Sprintf(`
 			SELECT
 				id,
-				created_at,
-				any(hostname) 
-			FROM 
-			(
-        		SELECT
-					tags_id AS id,
-                	*
-        		FROM
-                	cpu
-			) ANY INNER JOIN (
-				SELECT
-					id,
-					hostname
-				FROM
-					tags
-			) USING id
+				cpu.created_at AS crt,
+				any(hostname)
+			FROM
+				cpu
+			ANY INNER JOIN tags ON cpu.tags_id = tags.id
 			GROUP BY
-				id, created_at
+				id,
+				crt
 			ORDER BY
-				id, created_at desc
-			LIMIT 1 BY id
+				id,
+				crt DESC
+			LIMIT 1 BY id;
 			`)
 		// SQL-like syntax would be
 		//	SELECT
