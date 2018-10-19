@@ -332,7 +332,7 @@ func (d *dbCreator) CreateDB(dbName string) error {
 				tags_id         UInt32,
 				%s,
 				additional_tags String   DEFAULT ''
-			) ENGINE = MergeTree(created_date, created_at, 8192)`,
+			) ENGINE = MergeTree(created_date, (tags_id, created_at), 8192)`,
 			tableName,
 			strings.Join(fieldDef, ","))
 		if debug > 0 {
