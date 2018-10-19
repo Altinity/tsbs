@@ -7,19 +7,22 @@ if [[ -z "$EXE_FILE_NAME" ]]; then
     exit 1
 fi
 
-# Queries folder
+# Default queries folder
 BULK_DATA_DIR=${BULK_DATA_DIR:-"/tmp/bulk_queries"}
-
 LIMIT=${LIMIT:-"0"}
 NUM_WORKERS=${NUM_WORKERS:-$(grep -c ^processor /proc/cpuinfo)}  # match # of cores - worker per core
 
-for FULL_DATA_FILE_NAME in ${BULK_DATA_DIR}/queries_clickhouse*; do
+#
+# Run test for one file
+#
+function run_file()
+{
     # $FULL_DATA_FILE_NAME:  /full/path/to/file_with.ext
     # $DATA_FILE_NAME:       file_with.ext
     # $DIR:                  /full/path/to
     # $EXTENSION:            ext
     # NO_EXT_DATA_FILE_NAME: file_with
-
+    FULL_DATA_FILE_NAME=$1
     DATA_FILE_NAME=$(basename -- "${FULL_DATA_FILE_NAME}")
     DIR=$(dirname "${FULL_DATA_FILE_NAME}")
     EXTENSION="${DATA_FILE_NAME##*.}"
@@ -43,4 +46,16 @@ for FULL_DATA_FILE_NAME in ${BULK_DATA_DIR}/queries_clickhouse*; do
             -limit $LIMIT \
             -workers $NUM_WORKERS \
         | tee $OUT_FULL_FILE_NAME
-done
+}
+
+if [ "$#" -gt 0 ]; then
+    echo "Have $# files specified as params"
+    for FULL_DATA_FILE_NAME in "$@"; do
+        run_file $FULL_DATA_FILE_NAME
+    done
+else
+    echo "Do not have any files specified - run from default queries folder as ${BULK_DATA_DIR}/queries_clickhouse*"
+    for FULL_DATA_FILE_NAME in "${BULK_DATA_DIR}/queries_clickhouse"*; do
+        run_file $FULL_DATA_FILE_NAME
+    done
+fi
