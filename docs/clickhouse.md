@@ -73,3 +73,91 @@ Workers are connected to a server in a round-robin fashion.
 Specifies any connection parameters to pass along as the client
 connects to the ClickHouse server. 
 
+---
+
+## How to run test. Ubuntu 16.04 LTS example
+
+### Install ClickHouse
+
+Add ClickHouse repo
+```bash
+sudo bash -c "echo 'deb http://repo.yandex.ru/clickhouse/deb/stable/ main/' > /etc/apt/sources.list.d/clickhouse.list"
+```
+Add key and update repolist
+```bash
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+sudo apt-get update
+```
+
+Install binaries 
+```bash
+sudo apt-get install -y clickhouse-client clickhouse-server
+```
+More details on how to get started with ClickHouse is available [https://clickhouse.yandex/docs/en/getting_started/](here)
+
+
+Ensure ClickHouse is running
+```bash
+sudo service clickhouse-server restart
+```
+
+### Setup TSBS
+
+Install golang
+```bash
+sudo apt install golang-1.9
+```
+
+Add go binaries to PATH for convenience and setup GOPATH env
+```bash
+echo 'export PATH="$HOME/gocode/bin:/usr/lib/go-1.9/bin:$PATH"' >> ~/.bashrc
+echo 'export GOPATH="$HOME/gocode"' >> ~/.bashrc
+```
+
+Apply PATH and GOPATH
+```bash
+source ~/.bashrc
+```
+
+Create initial Go folders
+```bash
+mkdir -p $GOPATH/{bin,src}
+```
+
+Get and build TSBS
+```bash
+go get github.com/timescale/tsbs
+cd $GOPATH/src/github.com/timescale/tsbs/cmd
+go get ./...
+go install ./...
+```
+
+Run test
+
+```bash
+cd $GOPATH/src/github.com/timescale/tsbs/scripts
+```
+
+Generate test dataset. This may take some time.
+```bash
+FORMATS=clickhouse ./generate_data.sh
+```
+
+Generate test queries set. This should not take much time
+```bash
+FORMATS=clickhouse ./generate_queries.sh
+``` 
+
+Load data set
+```bash
+./load_clickhouse.sh
+``` 
+
+Run test query set. 
+In this example, there are restrictions on both number of concurrent workers and number of test queries to run.
+If you have powerful hardware, feel free to rise limits higher. 
+```bash
+NUM_WORKERS=1 LIMIT=10 ./run_queries_clickhouse.sh
+```
+
+Enjoy results in `/tmp/bulk_queries/result_queries_clickhouse*` files.
