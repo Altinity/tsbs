@@ -43,13 +43,7 @@ func init() {
 	flag.StringVar(&user, "user", "default", "User to connect to ClickHouse as")
 	flag.StringVar(&password, "password", "", "Password to connect to ClickHouse")
 
-	flag.BoolVar(&showExplain, "show-explain", false, "Print out the EXPLAIN output for sample query")
-
 	flag.Parse()
-
-	if showExplain {
-		runner.SetLimit(1)
-	}
 
 	// Parse comma separated string of hosts and put in a slice (for multi-node setups)
 	for _, host := range strings.Split(hosts, ",") {
@@ -119,7 +113,8 @@ func newProcessor() query.Processor {
 func (p *processor) Init(workerNumber int) {
 	p.db = sqlx.MustConnect("clickhouse", getConnectString(workerNumber))
 	p.opts = &queryExecutorOptions{
-		showExplain:   showExplain,
+		// ClickHouse could not do EXPLAIN
+		showExplain:   false,
 		debug:         runner.DebugLevel() > 0,
 		printResponse: runner.DoPrintResponses(),
 	}
@@ -139,9 +134,6 @@ func (p *processor) ProcessQuery(q query.Query, isWarm bool) ([]*query.Stat, err
 
 	// SqlQuery is []byte, so cast is needed
 	sql := string(chQuery.SqlQuery)
-	if showExplain {
-		sql = "EXPLAIN ANALYZE " + sql
-	}
 
 	// Main action - run the query
 	rows, err := p.db.Queryx(sql)
@@ -149,22 +141,15 @@ func (p *processor) ProcessQuery(q query.Query, isWarm bool) ([]*query.Stat, err
 		return nil, err
 	}
 
+	// Print some extra info if needed
 	if p.opts.debug {
 		fmt.Println(sql)
 	}
-	if showExplain {
-		text := ""
-		for rows.Next() {
-			var s string
-			if err2 := rows.Scan(&s); err2 != nil {
-				panic(err2)
-			}
-			text += s + "\n"
-		}
-		fmt.Printf("%s\n\n%s\n-----\n\n", sql, text)
-	} else if p.opts.printResponse {
+	if p.opts.printResponse {
 		prettyPrintResponse(rows, chQuery)
 	}
+
+	// Finalize the query
 	rows.Close()
 	took := float64(time.Since(start).Nanoseconds()) / 1e6
 
