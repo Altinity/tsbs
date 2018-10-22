@@ -22,11 +22,6 @@ PERF_OUTPUT=${PERF_OUTPUT:-}
 EXE_DIR=${EXE_DIR:-$(dirname $0)}
 source ${EXE_DIR}/load_common.sh
 
-while ! pg_isready -h ${DATABASE_HOST}; do
-    echo "Waiting for timescaledb"
-    sleep 1
-done
-
 cat ${DATA_FILE} | gunzip | $EXE_FILE_NAME \
                                 --host=${DATABASE_HOST} \
                                 --user=${DATABASE_USER} \
