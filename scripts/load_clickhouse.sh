@@ -31,6 +31,4 @@ cat ${DATA_FILE} | gunzip | $EXE_FILE_NAME \
                                 --workers=${NUM_WORKERS} \
                                 --reporting-period=${PROGRESS_INTERVAL} \
                                 --hash-workers=${HASH_WORKERS} \
-                                --partitions=${PARTITIONS} \
-                                --chunk-time=${CHUNK_TIME} \
                                 --write-profile=${PERF_OUTPUT}
