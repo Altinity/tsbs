@@ -55,7 +55,7 @@ func NewBenchmarkRunner() *BenchmarkRunner {
 	flag.BoolVar(&runner.statProcessor.prewarmQueries, "prewarm-queries", false, "Run each query twice in a row so the warm query is guaranteed to be a cache hit")
 	flag.BoolVar(&runner.printResponses, "print-responses", false, "Pretty print response bodies for correctness checking (default false).")
 	flag.IntVar(&runner.debug, "debug", 0, "Whether to print debug messages.")
-	flag.StringVar(&runner.fileName, "file", "", "Name of file to read")
+	flag.StringVar(&runner.fileName, "file", "", "File name to read queries from")
 
 	return runner
 }

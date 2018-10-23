@@ -43,6 +43,10 @@ var useCaseMatrix = map[string]map[string]utils.QueryFillerMaker{
 	},
 }
 
+const(
+	defaultWriteSize  = 4 << 20 // 4 MB
+)
+
 // Program option vars:
 var (
 	generator utils.DevopsGenerator
@@ -106,7 +110,7 @@ func init() {
 	var format            string
 	var useCase           string
 	var queryType         string
-	var scaleVar          int
+	var scale             int
 	var timestampStartStr string
 	var timestampEndStr   string
 
@@ -114,7 +118,7 @@ func init() {
 	flag.StringVar(&useCase, "use-case", "", "Use case to model. (Choices are in the use case matrix.)")
 	flag.StringVar(&queryType, "query-type", "", "Query type. (Choices are in the use case matrix.)")
 
-	flag.IntVar(&scaleVar, "scale-var", 1, "Scaling variable (must be the equal to the scalevar used for data generation).")
+	flag.IntVar(&scale, "scale", 1, "Scaling variable (must be the equal to the scalevar used for data generation).")
 	flag.IntVar(&queryCount, "queries", 1000, "Number of queries to generate.")
 
 	flag.BoolVar(&timescaleUseJSON, "timescale-use-json", false, "TimescaleDB only: Use separate JSON tags table when querying")
@@ -131,7 +135,7 @@ func init() {
 	flag.UintVar(&interleavedGenerationGroupID, "interleaved-generation-group-id", 0, "Group (0-indexed) to perform round-robin serialization within. Use this to scale up data generation to multiple processes.")
 	flag.UintVar(&interleavedGenerationGroups, "interleaved-generation-groups", 1, "The number of round-robin serialization groups. Use this to scale up data generation to multiple processes.")
 
-	flag.StringVar(&fileName, "file", "", "Name of file to write")
+	flag.StringVar(&fileName, "file", "", "File name to write generated queries to")
 
 	flag.Parse()
 
@@ -167,7 +171,7 @@ func init() {
 	timestampEnd = timestampEnd.UTC()
 
 	// Make the query generator:
-	generator = getGenerator(format, timestampStart, timestampEnd, scaleVar)
+	generator = getGenerator(format, timestampStart, timestampEnd, scale)
 	filler = useCaseMatrix[useCase][queryType](generator)
 }
 
@@ -176,6 +180,7 @@ func main() {
 	// Set up bookkeeping:
 	stats := make(map[string]int64)
 
+	// Prepare output file/STDOUT
 	var out  *bufio.Writer
 	var file io.Writer
 	if len(fileName) > 0 {
@@ -190,7 +195,7 @@ func main() {
 		file = os.Stdout
 	}
 	// Set up output buffering:
-	out = bufio.NewWriter(file)
+	out = bufio.NewWriterSize(file, defaultWriteSize)
 	defer out.Flush()
 
 	// Create request instances, serializing them to stdout and collecting

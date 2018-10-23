@@ -17,7 +17,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"runtime/pprof"
@@ -28,6 +27,8 @@ import (
 	"github.com/timescale/tsbs/cmd/tsbs_generate_data/common"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_data/devops"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_data/serialize"
+	"io"
+	"math/rand"
 )
 
 const (
@@ -42,6 +43,8 @@ const (
 	useCaseCPUOnly   = "cpu-only"
 	useCaseCPUSingle = "cpu-single"
 	useCaseDevops    = "devops"
+
+	defaultWriteSize  = 4 << 20 // 4 MB
 )
 
 // semi-constants
@@ -76,6 +79,7 @@ var (
 
 	logInterval time.Duration
 	limit       uint64
+	fileName    string
 )
 
 // Parse args:
@@ -101,6 +105,8 @@ func init() {
 
 	flag.DurationVar(&logInterval, "log-interval", 10*time.Second, "Duration between host data points")
 	flag.Uint64Var(&limit, "limit", 0, "Limit the number of data point to generate, 0 = no limit")
+	flag.StringVar(&fileName, "file", "", "File name to write generated data to")
+
 	flag.Parse()
 
 	if !(interleavedGenerationGroupID < interleavedGenerationGroups) {
@@ -141,7 +147,23 @@ func main() {
 	}
 
 	rand.Seed(seed)
-	out := bufio.NewWriterSize(os.Stdout, 4<<20)
+
+	// Prepare output file/STDOUT
+	var out  *bufio.Writer
+	var file io.Writer
+	if len(fileName) > 0 {
+		// Write output to file
+		file, err := os.Create(fileName)
+		if err != nil {
+			panic("cannot open file " + fileName)
+		}
+		defer file.Close()
+	} else {
+		// Write output to STDOUT
+		file = os.Stdout
+	}
+	// Set up output buffering:
+	out = bufio.NewWriterSize(file, defaultWriteSize)
 	defer out.Flush()
 
 	cfg := getConfig(useCase)
