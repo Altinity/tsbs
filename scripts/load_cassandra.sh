@@ -29,7 +29,7 @@ cqlsh -e 'drop keyspace measurements;'
 cat ${DATA_FILE} | gunzip | $EXE_FILE_NAME \
                                 --workers=${NUM_WORKERS} \
                                 --batch-size=${BATCH_SIZE} \
-                                --reporting-period=${PROGRESS_INTERVAL} \
+                                --reporting-period=${REPORTING_PERIOD} \
                                 --write-timeout=${CASSANDRA_TIMEOUT} \
                                 --hosts=${DATABASE_HOST}:${DATABASE_PORT} \
                                 --replication-factor=${REPLICATION_FACTOR}
