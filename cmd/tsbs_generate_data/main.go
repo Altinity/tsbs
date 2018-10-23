@@ -2,9 +2,10 @@
 //
 // Supported formats:
 // Cassandra CSV format
+// ClickHouse pseudo-CSV format (the same as for TimescaleDB)
 // InfluxDB bulk load format
 // MongoDB BSON format
-// TimescaleDB pseudo-CSV format
+// TimescaleDB pseudo-CSV format (the same as for ClickHouse)
 
 // Supported use cases:
 // devops: scale-var is the number of hosts to simulate, with log messages
