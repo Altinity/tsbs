@@ -30,5 +30,5 @@ cat ${DATA_FILE} | gunzip | $EXE_FILE_NAME \
                                 --backoff=${BACKOFF_SECS} \
                                 --workers=${NUM_WORKERS} \
                                 --batch-size=${BATCH_SIZE} \
-                                --reporting-period=${PROGRESS_INTERVAL} \
+                                --reporting-period=${REPORTING_PERIOD} \
                                 --urls=http://${DATABASE_HOST}:${DATABASE_PORT}

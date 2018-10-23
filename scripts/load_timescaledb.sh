@@ -37,7 +37,7 @@ cat ${DATA_FILE} | gunzip | $EXE_FILE_NAME \
                                 --user=${DATABASE_USER} \
                                 --workers=${NUM_WORKERS} \
                                 --batch-size=${BATCH_SIZE} \
-                                --reporting-period=${PROGRESS_INTERVAL} \
+                                --reporting-period=${REPORTING_PERIOD} \
                                 --use-hypertable=${USE_HYPERTABLE} \
                                 --use-jsonb-tags=${JSON_TAGS} \
                                 --in-table-partition-tag=${IN_TABLE_PARTITION_TAG} \
