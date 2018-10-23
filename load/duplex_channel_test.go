@@ -22,7 +22,7 @@ func TestNewDuplexChannel(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		ch := newDuplexChannel(c.queueSize)
+		ch := createDuplexChannel(c.queueSize)
 		if cap(ch.toScanner) != c.queueSize {
 			t.Errorf("%s: toScanner channel cap incorrect: got %d want %d", c.desc, cap(ch.toScanner), c.queueSize)
 		}
@@ -33,7 +33,7 @@ func TestNewDuplexChannel(t *testing.T) {
 }
 
 func TestSendToWorker(t *testing.T) {
-	ch := newDuplexChannel(1)
+	ch := createDuplexChannel(1)
 	ch.sendToWorker(&testBatch{})
 	if res, ok := <-ch.toWorker; !ok || res == nil {
 		t.Errorf("sendToWorker did not send item or sent nil")
@@ -41,7 +41,7 @@ func TestSendToWorker(t *testing.T) {
 }
 
 func TestSendToScanner(t *testing.T) {
-	ch := newDuplexChannel(1)
+	ch := createDuplexChannel(1)
 	ch.sendToScanner()
 	if res, ok := <-ch.toScanner; !res || !ok {
 		t.Errorf("sendToScanner did not send 'true', sent %v", res)
@@ -49,7 +49,7 @@ func TestSendToScanner(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	ch := newDuplexChannel(1)
+	ch := createDuplexChannel(1)
 	ch.close()
 	_, ok := <-ch.toWorker
 	if ok {

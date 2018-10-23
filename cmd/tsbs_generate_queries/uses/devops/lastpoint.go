@@ -12,7 +12,9 @@ type LastPointPerHost struct {
 
 // NewLastPointPerHost returns a new LastPointPerHost for given paremeters
 func NewLastPointPerHost(core utils.DevopsGenerator) utils.QueryFiller {
-	return &LastPointPerHost{core}
+	return &LastPointPerHost{
+		core,
+	}
 }
 
 // Fill fills in the query.Query with query details

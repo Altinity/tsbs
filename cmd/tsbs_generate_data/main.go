@@ -33,6 +33,7 @@ import (
 const (
 	// Output data format choices (alphabetical order)
 	formatCassandra   = "cassandra"
+	formatClickhouse  = "clickhouse"
 	formatInflux      = "influx"
 	formatMongo       = "mongo"
 	formatTimescaleDB = "timescaledb"
@@ -45,7 +46,13 @@ const (
 
 // semi-constants
 var (
-	formatChoices = []string{formatCassandra, formatInflux, formatMongo, formatTimescaleDB}
+	formatChoices = []string{
+		formatCassandra,
+		formatClickhouse,
+		formatInflux,
+		formatMongo,
+		formatTimescaleDB,
+	}
 	// allows for testing
 	fatal = log.Fatalf
 )
@@ -56,8 +63,8 @@ var (
 	useCase     string
 	profileFile string
 
-	initScaleVar uint64
-	scaleVar     uint64
+	initialScale uint64
+	scale        uint64
 	seed         int64
 	debug        int
 
@@ -68,6 +75,7 @@ var (
 	interleavedGenerationGroups  uint
 
 	logInterval time.Duration
+	limit       uint64
 )
 
 // Parse args:
@@ -78,8 +86,8 @@ func init() {
 
 	flag.StringVar(&useCase, "use-case", "", "Use case to model. (choices: devops, cpu-only)")
 
-	flag.Uint64Var(&initScaleVar, "initial-scale-var", 0, "Initial scaling variable specific to the use case (e.g., devices in 'devops'). 0 means to use -scale-var value")
-	flag.Uint64Var(&scaleVar, "scale-var", 1, "Scaling variable specific to the use case (e.g., devices in 'devops').")
+	flag.Uint64Var(&initialScale, "initial-scale", 0, "Initial scaling specific to the use case (e.g., devices in 'devops'). 0 means to use -scale value")
+	flag.Uint64Var(&scale, "scale", 1, "Scaling variable specific to the use case (e.g., devices in 'devops').")
 
 	flag.StringVar(&timestampStartStr, "timestamp-start", "2016-01-01T00:00:00Z", "Beginning timestamp (RFC3339).")
 	flag.StringVar(&timestampEndStr, "timestamp-end", "2016-01-02T06:00:00Z", "Ending timestamp (RFC3339).")
@@ -92,14 +100,15 @@ func init() {
 	flag.StringVar(&profileFile, "profile-file", "", "File to which to write go profiling data")
 
 	flag.DurationVar(&logInterval, "log-interval", 10*time.Second, "Duration between host data points")
+	flag.Uint64Var(&limit, "limit", 0, "Limit the number of data point to generate, 0 = no limit")
 	flag.Parse()
 
 	if !(interleavedGenerationGroupID < interleavedGenerationGroups) {
 		log.Fatal("incorrect interleaved groups configuration")
 	}
 
-	if initScaleVar == 0 {
-		initScaleVar = scaleVar
+	if initialScale == 0 {
+		initialScale = scale
 	}
 
 	// the default seed is the current timestamp:
@@ -136,7 +145,7 @@ func main() {
 	defer out.Flush()
 
 	cfg := getConfig(useCase)
-	sim := cfg.ToSimulator(logInterval)
+	sim := cfg.NewSimulator(logInterval, limit)
 	serializer := getSerializer(sim, format, out)
 
 	currentInterleavedGroup := uint(0)
@@ -185,8 +194,8 @@ func getConfig(useCase string) common.SimulatorConfig {
 			Start: timestampStart,
 			End:   timestampEnd,
 
-			InitHostCount:   initScaleVar,
-			HostCount:       scaleVar,
+			InitHostCount:   initialScale,
+			HostCount:       scale,
 			HostConstructor: devops.NewHost,
 		}
 	case useCaseCPUOnly:
@@ -194,8 +203,8 @@ func getConfig(useCase string) common.SimulatorConfig {
 			Start: timestampStart,
 			End:   timestampEnd,
 
-			InitHostCount:   initScaleVar,
-			HostCount:       scaleVar,
+			InitHostCount:   initialScale,
+			HostCount:       scale,
 			HostConstructor: devops.NewHostCPUOnly,
 		}
 	case useCaseCPUSingle:
@@ -203,8 +212,8 @@ func getConfig(useCase string) common.SimulatorConfig {
 			Start: timestampStart,
 			End:   timestampEnd,
 
-			InitHostCount:   initScaleVar,
-			HostCount:       scaleVar,
+			InitHostCount:   initialScale,
+			HostCount:       scale,
 			HostConstructor: devops.NewHostCPUSingle,
 		}
 	default:
@@ -217,10 +226,16 @@ func getSerializer(sim common.Simulator, format string, out *bufio.Writer) seria
 	switch format {
 	case formatCassandra:
 		return &serialize.CassandraSerializer{}
+
 	case formatInflux:
 		return &serialize.InfluxSerializer{}
+
 	case formatMongo:
 		return &serialize.MongoSerializer{}
+
+	case formatClickhouse:
+		fallthrough
+
 	case formatTimescaleDB:
 		out.WriteString("tags")
 		for _, key := range devops.MachineTagKeys {
@@ -247,10 +262,10 @@ func getSerializer(sim common.Simulator, format string, out *bufio.Writer) seria
 		out.WriteString("\n")
 
 		return &serialize.TimescaleDBSerializer{}
-	default:
-		fatal("unknown format: '%s'", format)
-		return nil
 	}
+
+	fatal("unknown format: '%s'", format)
+	return nil
 }
 
 // startMemoryProfile sets up memory profiling to be written to profileFile. It

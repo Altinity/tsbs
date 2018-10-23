@@ -58,9 +58,9 @@ func TestAckAndMaybeSend(t *testing.T) {
 			afterFirstID: 2,
 		},
 	}
-	ch := newDuplexChannel(100)
+	ch := createDuplexChannel(100)
 	for _, c := range cases {
-		c.unsent = ackAndMaybeSend(ch, &c.count, c.unsent)
+		c.unsent = sendOutstandingBatchToWorker(ch, &c.count, c.unsent)
 		if c.afterCount != c.count {
 			t.Errorf("%s: count incorrect: want %d got %d", c.desc, c.afterCount, c.count)
 		}
@@ -118,7 +118,7 @@ func TestSendOrQueueBatch(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		ch := newDuplexChannel(c.queueSize)
+		ch := createDuplexChannel(c.queueSize)
 		for _, b := range c.toSend {
 			c.unsent = sendOrQueueBatch(ch, &c.count, b, c.unsent)
 		}
@@ -211,7 +211,7 @@ func TestScanWithIndexer(t *testing.T) {
 	}
 	for _, c := range cases {
 		br := bufio.NewReader(bytes.NewReader(data))
-		channels := []*duplexChannel{newDuplexChannel(1)}
+		channels := []*duplexChannel{createDuplexChannel(1)}
 		decoder := &testDecoder{0}
 		indexer := &ConstantIndexer{}
 		go _boringWorker(channels[0])

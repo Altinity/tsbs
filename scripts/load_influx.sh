@@ -11,6 +11,9 @@ fi
 DATA_FILE_NAME=${DATA_FILE_NAME:-influx-data.gz}
 DATABASE_PORT=${DATABASE_PORT:-8086}
 
+# Load parameters - personal
+PROGRESS_INTERVAL=${PROGRESS_INTERVAL:-20s}
+
 EXE_DIR=${EXE_DIR:-$(dirname $0)}
 source ${EXE_DIR}/load_common.sh
 

@@ -9,11 +9,11 @@ type duplexChannel struct {
 	toScanner chan bool
 }
 
-// newDuplexChannel returns a duplexChannel whose buffer sizes are equal to queue
-func newDuplexChannel(queue int) *duplexChannel {
+// createDuplexChannel returns a duplexChannel with specified buffer sizes
+func createDuplexChannel(queueLen int) *duplexChannel {
 	return &duplexChannel{
-		toWorker:  make(chan Batch, queue),
-		toScanner: make(chan bool, queue),
+		toWorker:  make(chan Batch, queueLen),
+		toScanner: make(chan bool, queueLen),
 	}
 }
 

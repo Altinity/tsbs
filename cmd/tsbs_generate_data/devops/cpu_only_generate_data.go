@@ -46,8 +46,8 @@ type CPUOnlySimulatorConfig struct {
 	HostConstructor func(i int, start time.Time) Host
 }
 
-// ToSimulator produces a Simulator that conforms to the given SimulatorConfig over the specified interval
-func (d *CPUOnlySimulatorConfig) ToSimulator(interval time.Duration) common.Simulator {
+// NewSimulator produces a Simulator that conforms to the given SimulatorConfig over the specified interval
+func (d *CPUOnlySimulatorConfig) NewSimulator(interval time.Duration, limit uint64) common.Simulator {
 	hostInfos := make([]Host, d.HostCount)
 	for i := 0; i < len(hostInfos); i++ {
 		hostInfos[i] = d.HostConstructor(i, d.Start)
@@ -55,6 +55,9 @@ func (d *CPUOnlySimulatorConfig) ToSimulator(interval time.Duration) common.Simu
 
 	epochs := uint64(d.End.Sub(d.Start).Nanoseconds() / interval.Nanoseconds())
 	maxPoints := epochs * d.HostCount
+	if limit > 0 && limit < maxPoints {
+		maxPoints = limit
+	}
 	dg := &CPUOnlySimulator{&commonDevopsSimulator{
 		madePoints: 0,
 		maxPoints:  maxPoints,
