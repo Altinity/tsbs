@@ -152,6 +152,18 @@ func (d *dbCreator) CreateDB(dbName string) error {
 	return nil
 }
 
+func (d *dbCreator) PostCreateDB(dbName string) error {
+    parts := strings.Split(strings.TrimSpace(d.tags), ",")
+    tableCols["tags"] = parts[1:]
+
+    for _, cols := range d.cols {
+        parts := strings.Split(strings.TrimSpace(cols), ",")
+        tableCols[parts[0]] = parts[1:]
+	}
+
+    return nil
+}
+
 // createTagsTable builds CREATE TABLE SQL statement and runs it
 func createTagsTable(db *sqlx.DB, tags []string) {
 	// prepare COLUMNs specification for CREATE TABLE statement
