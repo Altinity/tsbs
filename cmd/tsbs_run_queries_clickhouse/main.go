@@ -20,6 +20,7 @@ import (
 var (
 	chConnect string
 	hostsList []string
+	port      string
 	user      string
 	password  string
 
@@ -40,6 +41,7 @@ func init() {
 		"String of additional ClickHouse connection parameters, e.g., 'sslmode=disable'.")
 	flag.StringVar(&hosts, "hosts", "localhost",
 		"Comma separated list of ClickHouse hosts (pass multiple values for sharding reads on a multi-node setup)")
+	flag.StringVar(&port, "port", "9000", "Port of ClickHouse instance")
 	flag.StringVar(&user, "user", "default", "User to connect to ClickHouse as")
 	flag.StringVar(&password, "password", "", "Password to connect to ClickHouse")
 
@@ -64,7 +66,7 @@ func getConnectString(workerNumber int) string {
 	// Round robin the host/worker assignment by assigning a host based on workerNumber % totalNumberOfHosts
 	host := hostsList[workerNumber%len(hostsList)]
 
-	return fmt.Sprintf("tcp://%s:9000?username=%s&password=%s&database=%s", host, user, password, runner.DatabaseName())
+	return fmt.Sprintf("tcp://%s:%s?username=%s&password=%s&database=%s", host, port, user, password, runner.DatabaseName())
 }
 
 // prettyPrintResponse prints a Query and its response in JSON format with two

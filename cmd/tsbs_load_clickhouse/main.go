@@ -19,6 +19,7 @@ const (
 // Program option vars:
 var (
 	host     string
+	port     string
 	user     string
 	password string
 
@@ -49,6 +50,7 @@ func init() {
 	loader = load.GetBenchmarkRunner()
 
 	flag.StringVar(&host, "host", "localhost", "Hostname of ClickHouse instance")
+	flag.StringVar(&port, "port", "9000", "Port of ClickHouse instance")
 	flag.StringVar(&user, "user", "default", "User to connect to ClickHouse as")
 	flag.StringVar(&password, "password", "", "Password to connect to ClickHouse")
 
