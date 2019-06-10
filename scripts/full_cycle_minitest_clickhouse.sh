@@ -29,6 +29,7 @@ BULK_DATA_DIR="${BULK_DATA_DIR}" \
 EXE_FILE_NAME="${GOPATH}/bin/tsbs_load_clickhouse" \
 DATABASE_NAME="benchmark" \
 DATABASE_HOST="127.0.0.1" \
+DATABASE_PORT="9000" \
 NUM_WORKERS=1 \
     ./load_clickhouse.sh
 
@@ -37,6 +38,7 @@ BULK_DATA_DIR="${BULK_DATA_DIR}" \
 EXE_FILE_NAME="${GOPATH}/bin/tsbs_run_queries_clickhouse" \
 DATABASE_NAME="benchmark" \
 DATABASE_HOSTS="127.0.0.1" \
+DATABASE_PORT="9000" \
 NUM_WORKERS=1 \
 MAX_QUERIES=100 \
     ./run_queries_clickhouse.sh
