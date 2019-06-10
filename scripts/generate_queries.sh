@@ -7,7 +7,7 @@ if [[ -z "${EXE_FILE_NAME}" ]]; then
     exit 1
 fi
 
-EXE_FILE_VERSION=`md5sum $EXE_FILE_NAME | awk '{ print $1 }'`
+EXE_FILE_VERSION=$(md5sum "${EXE_FILE_NAME}" | awk '{ print $1 }')
 # Queries folder
 BULK_DATA_DIR=${BULK_DATA_DIR:-"/tmp/bulk_queries"}
 
@@ -16,7 +16,13 @@ USE_JSON=${USE_JSON:-false}
 USE_TAGS=${USE_TAGS:-true}
 USE_TIME_BUCKET=${USE_TIME_BUCKET:-true}
 
-# Space-separated list of target DB formats to generate
+# Space-separated list of target DB formats to generate. Available formats are:
+#   cassandra
+#   clickhouse
+#   influx
+#   mongo
+#   siridb
+#   timescaledb
 FORMATS=${FORMATS:-"timescaledb"}
 
 # All available for generation query types (sorted alphabetically)
@@ -37,7 +43,7 @@ single-groupby-5-1-1 \
 single-groupby-5-1-12 \
 single-groupby-5-8-1"
 
-# What query types to generate
+# Space-separated list of target query types to generate. Available formats are listed in $QUERY_TYPES_ALL
 QUERY_TYPES=${QUERY_TYPES:-$QUERY_TYPES_ALL}
 
 # Number of hosts to generate data about
@@ -57,24 +63,27 @@ TS_END=${TS_END:-"2016-01-04T00:00:01Z"}
 USE_CASE=${USE_CASE:-"cpu-only"}
 
 # Ensure DATA DIR available
-mkdir -p ${BULK_DATA_DIR}
-chmod a+rwx ${BULK_DATA_DIR}
+mkdir -p "${BULK_DATA_DIR}"
+chmod a+rwx "${BULK_DATA_DIR}"
 
-pushd ${BULK_DATA_DIR}
+pushd "${BULK_DATA_DIR}"
 set -eo pipefail
 
 # Loop over all requested queries types and generate data
 for QUERY_TYPE in ${QUERY_TYPES}; do
     for FORMAT in ${FORMATS}; do
         DATA_FILE_NAME="queries_${FORMAT}_${QUERY_TYPE}_${EXE_FILE_VERSION}_${QUERIES}_${SCALE}_${SEED}_${TS_START}_${TS_END}_${USE_CASE}.dat.gz"
-        if [ -f "${DATA_FILE_NAME}" ]; then
+        if [[ -f "${DATA_FILE_NAME}" ]]; then
             echo "WARNING: file ${DATA_FILE_NAME} already exists, skip generating new data"
         else
-            cleanup() {
+            # Wrap data generation into "incomplete data cleanup". In case data generation interrupted,
+            # incomplete file will interfere and block data generation due to previous if.
+            # We'd like to clean incomplete files
+            cleanup_incomplete_file() {
                 rm -f ${DATA_FILE_NAME}
                 exit 1
             }
-            trap cleanup EXIT
+            trap cleanup_incomplete_file EXIT
 
             echo "Generating ${DATA_FILE_NAME}:"
             ${EXE_FILE_NAME} \
@@ -93,6 +102,7 @@ for QUERY_TYPE in ${QUERY_TYPES}; do
             | gzip  > ${DATA_FILE_NAME}
 
             trap - EXIT
+
             # Make short symlink for convenience
             SYMLINK_NAME="${FORMAT}-${QUERY_TYPE}-queries.gz"
 

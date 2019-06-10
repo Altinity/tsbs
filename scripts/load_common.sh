@@ -17,7 +17,7 @@ BACKOFF_SECS=${BACKOFF_SECS:-1s}
 REPORTING_PERIOD=${REPORTING_PERIOD:-10s}
 
 # Ensure data file is in place
-if [ ! -f ${DATA_FILE} ]; then
+if [[ ! -f "${DATA_FILE}" ]]; then
    echo "Cannot find data file ${DATA_FILE}"
    exit -1
 fi

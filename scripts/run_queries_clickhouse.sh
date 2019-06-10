@@ -11,6 +11,11 @@ fi
 BULK_DATA_DIR=${BULK_DATA_DIR:-"/tmp/bulk_queries"}
 MAX_QUERIES=${MAX_QUERIES:-"0"}
 NUM_WORKERS=${NUM_WORKERS:-$(grep -c ^processor /proc/cpuinfo)}  # match # of cores - worker per core
+# Database credentials
+# Comma separated list of ClickHouse hosts (pass multiple values for sharding reads on a multi-node setup)
+DATABASE_HOSTS=${DATABASE_HOSTS:-"localhost"}
+DATABASE_NAME=${DATABASE_NAME:-"benchmark"}
+
 
 #
 # Run test for one file
@@ -33,30 +38,31 @@ function run_file()
     OUT_FULL_FILE_NAME="${DIR}/result_${NO_EXT_DATA_FILE_NAME}.out"
     #OUT_FULL_FILE_NAME="${DIR}/${NO_EXT_DATA_FILE_NAME}.out"
 
-    if [ "${EXTENSION}" == "gz" ]; then
+    if [[ "${EXTENSION}" == "gz" ]]; then
         GUNZIP="gunzip"
     else
         GUNZIP="cat"
     fi
 
     echo "Running ${DATA_FILE_NAME}"
-    cat $FULL_DATA_FILE_NAME \
-        | $GUNZIP \
-        | $EXE_FILE_NAME \
-	    -hosts $CH_HOSTS \
-            -max-queries $MAX_QUERIES \
-            -workers $NUM_WORKERS \
-        | tee $OUT_FULL_FILE_NAME
+    cat ${FULL_DATA_FILE_NAME} \
+        | ${GUNZIP} \
+        | ${EXE_FILE_NAME} \
+            -hosts ${DATABASE_HOSTS} \
+            -db-name ${DATABASE_NAME} \
+            -max-queries ${MAX_QUERIES} \
+            -workers ${NUM_WORKERS} \
+        | tee ${OUT_FULL_FILE_NAME}
 }
 
-if [ "$#" -gt 0 ]; then
+if [[ "$#" -gt 0 ]]; then
     echo "Have $# files specified as params"
     for FULL_DATA_FILE_NAME in "$@"; do
-        run_file $FULL_DATA_FILE_NAME
+        run_file ${FULL_DATA_FILE_NAME}
     done
 else
     echo "Do not have any files specified - run from default queries folder as ${BULK_DATA_DIR}/queries_clickhouse*"
     for FULL_DATA_FILE_NAME in "${BULK_DATA_DIR}/queries_clickhouse"*; do
-        run_file $FULL_DATA_FILE_NAME
+        run_file ${FULL_DATA_FILE_NAME}
     done
 fi

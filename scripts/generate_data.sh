@@ -10,7 +10,13 @@ fi
 # Data folder
 BULK_DATA_DIR=${BULK_DATA_DIR:-"/tmp/bulk_data"}
 
-# Space-separated list of target DB formats to generate
+# Space-separated list of target DB formats to generate. Available formats are:
+#   cassandra
+#   clickhouse
+#   influx
+#   mongo
+#   siridb
+#   timescaledb
 FORMATS=${FORMATS:-"timescaledb"}
 
 # Number of hosts to generate data about
@@ -33,23 +39,27 @@ LOG_INTERVAL=${LOG_INTERVAL:-"10s"}
 MAX_DATA_POINTS=${MAX_DATA_POINTS:-"0"}
 
 # Ensure DATA DIR available
-mkdir -p ${BULK_DATA_DIR}
-chmod a+rwx ${BULK_DATA_DIR}
+mkdir -p "${BULK_DATA_DIR}"
+chmod a+rwx "${BULK_DATA_DIR}"
 
-pushd ${BULK_DATA_DIR}
+pushd "${BULK_DATA_DIR}"
 set -eo pipefail
 
 # Loop over all requested target formats and generate data
 for FORMAT in ${FORMATS}; do
+    # Target file to save data to
     DATA_FILE_NAME="data_${FORMAT}_${USE_CASE}_${SCALE}_${TS_START}_${TS_END}_${LOG_INTERVAL}_${SEED}.dat.gz"
-    if [ -f "${DATA_FILE_NAME}" ]; then
+    if [[ -f "${DATA_FILE_NAME}" ]]; then
         echo "WARNING: file ${DATA_FILE_NAME} already exists, skip generating new data"
     else
-        cleanup() {
-            rm -f ${DATA_FILE_NAME}
+        # Wrap data generation into "incomplete data cleanup". In case data generation interrupted,
+        # incomplete file will interfere and block data generation due to previous if.
+        # We'd like to clean incomplete files
+        cleanup_incomplete_file() {
+            rm -f "${DATA_FILE_NAME}"
             exit 1
         }
-        trap cleanup EXIT
+        trap cleanup_incomplete_file EXIT
 
         echo "Generating ${DATA_FILE_NAME}:"
         ${EXE_FILE_NAME} \
@@ -64,13 +74,14 @@ for FORMAT in ${FORMATS}; do
         | gzip > ${DATA_FILE_NAME}
 
         trap - EXIT
+
         # Make short symlink for convenience
         SYMLINK_NAME="${FORMAT}-data.gz"
 
         rm -f ${SYMLINK_NAME} 2> /dev/null
         ln -s ${DATA_FILE_NAME} ${SYMLINK_NAME}
 
-        # Make files readable by everyone
+        # Make files accessible by everyone
         chmod a+r ${DATA_FILE_NAME} ${SYMLINK_NAME}
 
         ls -lh ${SYMLINK_NAME}
