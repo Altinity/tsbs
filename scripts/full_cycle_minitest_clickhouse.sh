@@ -36,7 +36,7 @@ NUM_WORKERS=1 \
 BULK_DATA_DIR="${BULK_DATA_DIR}" \
 EXE_FILE_NAME="${GOPATH}/bin/tsbs_run_queries_clickhouse" \
 DATABASE_NAME="benchmark" \
-DATABSE_HOSTS="127.0.0.1" \
+DATABASE_HOSTS="127.0.0.1" \
 NUM_WORKERS=1 \
 MAX_QUERIES=100 \
     ./run_queries_clickhouse.sh
