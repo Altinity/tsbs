@@ -13,15 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	"github.com/timescale/tsbs/load"
 )
 
 const (
-	dbType       = "postgres"
 	timeValueIdx = "TIME-VALUE"
 	valueTimeIdx = "VALUE-TIME"
+	pgxDriver    = "pgx"
+	pqDriver     = "postgres"
 )
 
 // Program option vars:
@@ -29,6 +28,10 @@ var (
 	postgresConnect string
 	host            string
 	user            string
+	pass            string
+	port            string
+	connDB          string
+	driver          string // postgres or pgx
 
 	useHypertable bool
 	logBatches    bool
@@ -47,6 +50,9 @@ var (
 
 	profileFile          string
 	replicationStatsFile string
+
+	createMetricsTable bool
+	forceTextFormat    bool
 )
 
 type insertData struct {
@@ -55,10 +61,7 @@ type insertData struct {
 }
 
 // Global vars
-var (
-	loader    *load.BenchmarkRunner
-	tableCols map[string][]string
-)
+var loader *load.BenchmarkRunner
 
 // allows for testing
 var fatal = log.Fatalf
@@ -69,7 +72,12 @@ func init() {
 
 	flag.StringVar(&postgresConnect, "postgres", "sslmode=disable", "PostgreSQL connection string")
 	flag.StringVar(&host, "host", "localhost", "Hostname of TimescaleDB (PostgreSQL) instance")
+	flag.StringVar(&port, "port", "5432", "Which port to connect to on the database host")
 	flag.StringVar(&user, "user", "postgres", "User to connect to PostgreSQL as")
+	flag.StringVar(&pass, "pass", "", "Password for user connecting to PostgreSQL (leave blank if not password protected)")
+	flag.StringVar(&connDB, "admin-db-name", user, "Database to connect to in order to create additional benchmark databases.\n"+
+		"By default this is the same as the `user` (i.e., `postgres` if neither is set),\n"+
+		"but sometimes a user does not have its own database.")
 
 	flag.BoolVar(&logBatches, "log-batches", false, "Whether to time individual batches.")
 
@@ -90,9 +98,11 @@ func init() {
 
 	flag.StringVar(&profileFile, "write-profile", "", "File to output CPU/memory profile to")
 	flag.StringVar(&replicationStatsFile, "write-replication-stats", "", "File to output replication stats to")
+	flag.BoolVar(&createMetricsTable, "create-metrics-table", true, "Drops existing and creates new metrics table. Can be used for both regular and hypertable")
+
+	flag.BoolVar(&forceTextFormat, "force-text-format", false, "Send/receive data in text format")
 
 	flag.Parse()
-	tableCols = make(map[string][]string)
 }
 
 type benchmark struct{}
@@ -120,10 +130,16 @@ func (b *benchmark) GetDBCreator() load.DBCreator {
 	return &dbCreator{
 		br:      loader.GetBufferedReader(),
 		connStr: getConnectString(),
+		connDB:  connDB,
 	}
 }
 
 func main() {
+	if forceTextFormat {
+		driver = pqDriver
+	} else {
+		driver = pgxDriver
+	}
 	// If specified, generate a performance profile
 	if len(profileFile) > 0 {
 		go profileCPUAndMem(profileFile)
@@ -150,20 +166,20 @@ func getConnectString() string {
 	// multi host configuration. Same for dbname= and user=. This sanitizes that.
 	re := regexp.MustCompile(`(host|dbname|user)=\S*\b`)
 	connectString := strings.TrimSpace(re.ReplaceAllString(postgresConnect, ""))
+	connectString = fmt.Sprintf("host=%s dbname=%s user=%s %s", host, loader.DatabaseName(), user, connectString)
 
-	return fmt.Sprintf("host=%s dbname=%s user=%s %s", host, loader.DatabaseName(), user, connectString)
-}
-
-func createTagsTable(db *sqlx.DB, tags []string) {
-	if useJSON {
-		db.MustExec("CREATE TABLE tags(id SERIAL PRIMARY KEY, tagset JSONB)")
-		db.MustExec("CREATE UNIQUE INDEX uniq1 ON tags(tagset)")
-		db.MustExec("CREATE INDEX idxginp ON tags USING gin (tagset jsonb_path_ops);")
-	} else {
-		cols := strings.Join(tags, " TEXT, ")
-		cols += " TEXT"
-		db.MustExec(fmt.Sprintf("CREATE TABLE tags(id SERIAL PRIMARY KEY, %s)", cols))
-		db.MustExec(fmt.Sprintf("CREATE UNIQUE INDEX uniq1 ON tags(%s)", strings.Join(tags, ",")))
-		db.MustExec(fmt.Sprintf("CREATE INDEX ON tags(%s)", tags[0]))
+	// For optional parameters, ensure they exist then interpolate them into the connectString
+	if len(port) > 0 {
+		connectString = fmt.Sprintf("%s port=%s", connectString, port)
 	}
+	if len(pass) > 0 {
+		connectString = fmt.Sprintf("%s password=%s", connectString, pass)
+	}
+
+	if forceTextFormat {
+		// we assume we're using pq driver
+		connectString = fmt.Sprintf("%s disable_prepared_binary_result=yes binary_parameters=no", connectString)
+	}
+
+	return connectString
 }

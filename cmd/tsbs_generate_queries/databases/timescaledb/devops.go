@@ -9,16 +9,37 @@ import (
 	"github.com/timescale/tsbs/query"
 )
 
+// TODO: Remove the need for this by continuing to bubble up errors
+func panicIfErr(err error) {
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+const (
+	oneMinute = 60
+	oneHour   = oneMinute * 60
+
+	timeBucketFmt    = "time_bucket('%d seconds', time)"
+	nonTimeBucketFmt = "to_timestamp(((extract(epoch from time)::int)/%d)*%d)"
+)
+
 // Devops produces TimescaleDB-specific queries for all the devops query types.
 type Devops struct {
 	*devops.Core
-	UseJSON bool
-	UseTags bool
+	UseJSON       bool
+	UseTags       bool
+	UseTimeBucket bool
 }
 
 // NewDevops makes an Devops object ready to generate Queries.
 func NewDevops(start, end time.Time, scale int) *Devops {
-	return &Devops{devops.NewCore(start, end, scale), false, false}
+	core, err := devops.NewCore(start, end, scale)
+	panicIfErr(err)
+	return &Devops{
+		Core:          core,
+		UseTimeBucket: true,
+	}
 }
 
 // GenerateEmptyQuery returns an empty query.TimescaleDB
@@ -51,9 +72,17 @@ func (d *Devops) getHostWhereWithHostnames(hostnames []string) string {
 }
 
 // getHostWhereString gets multiple random hostnames and creates a WHERE SQL statement for these hostnames.
-func (d *Devops) getHostWhereString(nhosts int) string {
-	hostnames := d.GetRandomHosts(nhosts)
+func (d *Devops) getHostWhereString(nHosts int) string {
+	hostnames, err := d.GetRandomHosts(nHosts)
+	panicIfErr(err)
 	return d.getHostWhereWithHostnames(hostnames)
+}
+
+func (d *Devops) getTimeBucket(seconds int) string {
+	if d.UseTimeBucket {
+		return fmt.Sprintf(timeBucketFmt, seconds)
+	}
+	return fmt.Sprintf(nonTimeBucketFmt, seconds, seconds)
 }
 
 func (d *Devops) getSelectClausesAggMetrics(agg string, metrics []string) []string {
@@ -69,7 +98,7 @@ const goTimeFmt = "2006-01-02 15:04:05.999999 -0700"
 
 // GroupByTime selects the MAX for numMetrics metrics under 'cpu',
 // per minute for nhosts hosts,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT minute, max(metric1), ..., max(metricN)
 // FROM cpu
@@ -77,19 +106,24 @@ const goTimeFmt = "2006-01-02 15:04:05.999999 -0700"
 // AND time >= '$HOUR_START' AND time < '$HOUR_END'
 // GROUP BY minute ORDER BY minute ASC
 func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange time.Duration) {
-	interval := d.Interval.RandWindow(timeRange)
-	metrics := devops.GetCPUMetricsSlice(numMetrics)
+	interval := d.Interval.MustRandWindow(timeRange)
+	metrics, err := devops.GetCPUMetricsSlice(numMetrics)
+	panicIfErr(err)
 	selectClauses := d.getSelectClausesAggMetrics("max", metrics)
+	if len(selectClauses) < 1 {
+		panic(fmt.Sprintf("invalid number of select clauses: got %d", len(selectClauses)))
+	}
 
-	sql := fmt.Sprintf(`SELECT time_bucket('1 minute', time) AS minute,
+	sql := fmt.Sprintf(`SELECT %s AS minute,
         %s
         FROM cpu
         WHERE %s AND time >= '%s' AND time < '%s'
         GROUP BY minute ORDER BY minute ASC`,
+		d.getTimeBucket(oneMinute),
 		strings.Join(selectClauses, ", "),
 		d.getHostWhereString(nHosts),
-		interval.Start.Format(goTimeFmt),
-		interval.End.Format(goTimeFmt))
+		interval.Start().Format(goTimeFmt),
+		interval.End().Format(goTimeFmt))
 
 	humanLabel := fmt.Sprintf("TimescaleDB %d cpu metric(s), random %4d hosts, random %s by 1m", numMetrics, nHosts, timeRange)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
@@ -102,14 +136,15 @@ func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange t
 // GROUP BY t ORDER BY t DESC
 // LIMIT $LIMIT
 func (d *Devops) GroupByOrderByLimit(qi query.Query) {
-	interval := d.Interval.RandWindow(time.Hour)
-	sql := fmt.Sprintf(`SELECT time_bucket('1 minute', time) AS minute, max(usage_user)
+	interval := d.Interval.MustRandWindow(time.Hour)
+	sql := fmt.Sprintf(`SELECT %s AS minute, max(usage_user)
         FROM cpu
         WHERE time < '%s'
         GROUP BY minute
         ORDER BY minute DESC
         LIMIT 5`,
-		interval.End.Format(goTimeFmt))
+		d.getTimeBucket(oneMinute),
+		interval.End().Format(goTimeFmt))
 
 	humanLabel := "TimescaleDB max cpu over last 5 min-intervals (random end)"
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.EndString())
@@ -117,15 +152,16 @@ func (d *Devops) GroupByOrderByLimit(qi query.Query) {
 }
 
 // GroupByTimeAndPrimaryTag selects the AVG of numMetrics metrics under 'cpu' per device per hour for a day,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT AVG(metric1), ..., AVG(metricN)
 // FROM cpu
 // WHERE time >= '$HOUR_START' AND time < '$HOUR_END'
 // GROUP BY hour, hostname ORDER BY hour
 func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
-	metrics := devops.GetCPUMetricsSlice(numMetrics)
-	interval := d.Interval.RandWindow(devops.DoubleGroupByDuration)
+	metrics, err := devops.GetCPUMetricsSlice(numMetrics)
+	panicIfErr(err)
+	interval := d.Interval.MustRandWindow(devops.DoubleGroupByDuration)
 
 	selectClauses := make([]string, numMetrics)
 	meanClauses := make([]string, numMetrics)
@@ -147,7 +183,7 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 
 	sql := fmt.Sprintf(`
         WITH cpu_avg AS (
-          SELECT time_bucket('1 hour', time) as hour, tags_id,
+          SELECT %s as hour, tags_id,
           %s
           FROM cpu
           WHERE time >= '%s' AND time < '%s'
@@ -157,8 +193,10 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
         FROM cpu_avg
         %s
         ORDER BY hour, %s`,
+		d.getTimeBucket(oneHour),
 		strings.Join(selectClauses, ", "),
-		interval.Start.Format(goTimeFmt), interval.End.Format(goTimeFmt),
+		interval.Start().Format(goTimeFmt),
+		interval.End().Format(goTimeFmt),
 		hostnameField, strings.Join(meanClauses, ", "),
 		joinStr, hostnameField)
 	humanLabel := devops.GetDoubleGroupByLabel("TimescaleDB", numMetrics)
@@ -174,18 +212,21 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 // AND time >= '$HOUR_START' AND time < '$HOUR_END'
 // GROUP BY hour ORDER BY hour
 func (d *Devops) MaxAllCPU(qi query.Query, nHosts int) {
-	interval := d.Interval.RandWindow(devops.MaxAllDuration)
+	interval := d.Interval.MustRandWindow(devops.MaxAllDuration)
+
 	metrics := devops.GetAllCPUMetrics()
 	selectClauses := d.getSelectClausesAggMetrics("max", metrics)
 
-	sql := fmt.Sprintf(`SELECT time_bucket('1 hour', time) AS hour,
+	sql := fmt.Sprintf(`SELECT %s AS hour,
         %s
         FROM cpu
         WHERE %s AND time >= '%s' AND time < '%s'
         GROUP BY hour ORDER BY hour`,
+		d.getTimeBucket(oneHour),
 		strings.Join(selectClauses, ", "),
 		d.getHostWhereString(nHosts),
-		interval.Start.Format(goTimeFmt), interval.End.Format(goTimeFmt))
+		interval.Start().Format(goTimeFmt),
+		interval.End().Format(goTimeFmt))
 
 	humanLabel := devops.GetMaxAllLabel("TimescaleDB", nHosts)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
@@ -210,7 +251,7 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 
 // HighCPUForHosts populates a query that gets CPU metrics when the CPU has high
 // usage between a time period for a number of hosts (if 0, it will search all hosts),
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT * FROM cpu
 // WHERE usage_user > 90.0
@@ -223,12 +264,13 @@ func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
 	} else {
 		hostWhereClause = fmt.Sprintf("AND %s", d.getHostWhereString(nHosts))
 	}
-	interval := d.Interval.RandWindow(devops.HighCPUDuration)
+	interval := d.Interval.MustRandWindow(devops.HighCPUDuration)
 
 	sql := fmt.Sprintf(`SELECT * FROM cpu WHERE usage_user > 90.0 and time >= '%s' AND time < '%s' %s`,
-		interval.Start.Format(goTimeFmt), interval.End.Format(goTimeFmt), hostWhereClause)
+		interval.Start().Format(goTimeFmt), interval.End().Format(goTimeFmt), hostWhereClause)
 
-	humanLabel := devops.GetHighCPULabel("TimescaleDB", nHosts)
+	humanLabel, err := devops.GetHighCPULabel("TimescaleDB", nHosts)
+	panicIfErr(err)
 	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
 	d.fillInQuery(qi, humanLabel, humanDesc, sql)
 }

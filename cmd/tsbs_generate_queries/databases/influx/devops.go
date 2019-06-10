@@ -10,6 +10,13 @@ import (
 	"github.com/timescale/tsbs/query"
 )
 
+// TODO: Remove the need for this by continuing to bubble up errors
+func panicIfErr(err error) {
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
 // Devops produces Influx-specific queries for all the devops query types.
 type Devops struct {
 	*devops.Core
@@ -17,7 +24,9 @@ type Devops struct {
 
 // NewDevops makes an Devops object ready to generate Queries.
 func NewDevops(start, end time.Time, scale int) *Devops {
-	return &Devops{devops.NewCore(start, end, scale)}
+	core, err := devops.NewCore(start, end, scale)
+	panicIfErr(err)
+	return &Devops{core}
 }
 
 // GenerateEmptyQuery returns an empty query.HTTP
@@ -36,7 +45,8 @@ func (d *Devops) getHostWhereWithHostnames(hostnames []string) string {
 }
 
 func (d *Devops) getHostWhereString(nHosts int) string {
-	hostnames := d.GetRandomHosts(nHosts)
+	hostnames, err := d.GetRandomHosts(nHosts)
+	panicIfErr(err)
 	return d.getHostWhereWithHostnames(hostnames)
 }
 
@@ -51,7 +61,7 @@ func (d *Devops) getSelectClausesAggMetrics(agg string, metrics []string) []stri
 
 // GroupByTime selects the MAX for numMetrics metrics under 'cpu',
 // per minute for nhosts hosts,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT minute, max(metric1), ..., max(metricN)
 // FROM cpu
@@ -59,8 +69,9 @@ func (d *Devops) getSelectClausesAggMetrics(agg string, metrics []string) []stri
 // AND time >= '$HOUR_START' AND time < '$HOUR_END'
 // GROUP BY minute ORDER BY minute ASC
 func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange time.Duration) {
-	interval := d.Interval.RandWindow(timeRange)
-	metrics := devops.GetCPUMetricsSlice(numMetrics)
+	interval := d.Interval.MustRandWindow(timeRange)
+	metrics, err := devops.GetCPUMetricsSlice(numMetrics)
+	panicIfErr(err)
 	selectClauses := d.getSelectClausesAggMetrics("max", metrics)
 	whereHosts := d.getHostWhereString(nHosts)
 
@@ -76,7 +87,7 @@ func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange t
 // GROUP BY t ORDER BY t DESC
 // LIMIT $LIMIT
 func (d *Devops) GroupByOrderByLimit(qi query.Query) {
-	interval := d.Interval.RandWindow(time.Hour)
+	interval := d.Interval.MustRandWindow(time.Hour)
 	where := fmt.Sprintf("WHERE time < '%s'", interval.EndString())
 
 	humanLabel := "Influx max cpu over last 5 min-intervals (random end)"
@@ -86,15 +97,16 @@ func (d *Devops) GroupByOrderByLimit(qi query.Query) {
 }
 
 // GroupByTimeAndPrimaryTag selects the AVG of numMetrics metrics under 'cpu' per device per hour for a day,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT AVG(metric1), ..., AVG(metricN)
 // FROM cpu
 // WHERE time >= '$HOUR_START' AND time < '$HOUR_END'
 // GROUP BY hour, hostname ORDER BY hour, hostname
 func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
-	metrics := devops.GetCPUMetricsSlice(numMetrics)
-	interval := d.Interval.RandWindow(devops.DoubleGroupByDuration)
+	metrics, err := devops.GetCPUMetricsSlice(numMetrics)
+	panicIfErr(err)
+	interval := d.Interval.MustRandWindow(devops.DoubleGroupByDuration)
 	selectClauses := d.getSelectClausesAggMetrics("mean", metrics)
 
 	humanLabel := devops.GetDoubleGroupByLabel("Influx", numMetrics)
@@ -104,14 +116,14 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
 }
 
 // MaxAllCPU selects the MAX of all metrics under 'cpu' per hour for nhosts hosts,
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT MAX(metric1), ..., MAX(metricN)
 // FROM cpu WHERE (hostname = '$HOSTNAME_1' OR ... OR hostname = '$HOSTNAME_N')
 // AND time >= '$HOUR_START' AND time < '$HOUR_END'
 // GROUP BY hour ORDER BY hour
 func (d *Devops) MaxAllCPU(qi query.Query, nHosts int) {
-	interval := d.Interval.RandWindow(devops.MaxAllDuration)
+	interval := d.Interval.MustRandWindow(devops.MaxAllDuration)
 	whereHosts := d.getHostWhereString(nHosts)
 	selectClauses := d.getSelectClausesAggMetrics("max", devops.GetAllCPUMetrics())
 
@@ -131,14 +143,15 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 
 // HighCPUForHosts populates a query that gets CPU metrics when the CPU has high
 // usage between a time period for a number of hosts (if 0, it will search all hosts),
-// e.g. in psuedo-SQL:
+// e.g. in pseudo-SQL:
 //
 // SELECT * FROM cpu
 // WHERE usage_user > 90.0
 // AND time >= '$TIME_START' AND time < '$TIME_END'
 // AND (hostname = '$HOST' OR hostname = '$HOST2'...)
 func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
-	interval := d.Interval.RandWindow(devops.HighCPUDuration)
+	interval := d.Interval.MustRandWindow(devops.HighCPUDuration)
+
 	var hostWhereClause string
 	if nHosts == 0 {
 		hostWhereClause = ""
@@ -146,8 +159,9 @@ func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
 		hostWhereClause = fmt.Sprintf("and %s", d.getHostWhereString(nHosts))
 	}
 
-	humanLabel := devops.GetHighCPULabel("Influx", nHosts)
-	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval)
+	humanLabel, err := devops.GetHighCPULabel("Influx", nHosts)
+	panicIfErr(err)
+	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
 	influxql := fmt.Sprintf("SELECT * from cpu where usage_user > 90.0 %s and time >= '%s' and time < '%s'", hostWhereClause, interval.StartString(), interval.EndString())
 	d.fillInQuery(qi, humanLabel, humanDesc, influxql)
 }
