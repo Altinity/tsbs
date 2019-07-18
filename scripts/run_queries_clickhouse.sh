@@ -14,6 +14,8 @@ NUM_WORKERS=${NUM_WORKERS:-$(grep -c ^processor /proc/cpuinfo)}  # match # of co
 # Database credentials
 # Comma separated list of ClickHouse hosts (pass multiple values for sharding reads on a multi-node setup)
 DATABASE_HOSTS=${DATABASE_HOSTS:-"localhost"}
+DATABASE_USER=${DATABASE_USER:-"default"}
+DATABASE_PASS=${DATABASE_PASS:-""}
 DATABASE_PORT=${DATABASE_PORT:-"9000"}
 DATABASE_NAME=${DATABASE_NAME:-"benchmark"}
 
@@ -54,6 +56,8 @@ function run_file()
             -db-name ${DATABASE_NAME} \
             -max-queries ${MAX_QUERIES} \
             -workers ${NUM_WORKERS} \
+            -user ${DATABASE_USER} \
+            -password ${DATABASE_PASS} \
         | tee ${OUT_FULL_FILE_NAME}
 }
 
