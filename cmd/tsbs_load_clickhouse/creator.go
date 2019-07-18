@@ -96,13 +96,7 @@ func (d *dbCreator) DBExists(dbName string) bool {
 
 // loader.DBCreator interface implementation
 func (d *dbCreator) RemoveOldDB(dbName string) error {
-	db := sqlx.MustConnect(dbType, getConnectString(false))
-	defer db.Close()
-
-	sql := fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName)
-	if _, err := db.Exec(sql); err != nil {
-		panic(err)
-	}
+	// We do not want to drop DB
 	return nil
 }
 
@@ -110,7 +104,7 @@ func (d *dbCreator) RemoveOldDB(dbName string) error {
 func (d *dbCreator) CreateDB(dbName string) error {
 	// Connect to ClickHouse in general and CREATE DATABASE
 	db := sqlx.MustConnect(dbType, getConnectString(false))
-	sql := fmt.Sprintf("CREATE DATABASE %s", dbName)
+	sql := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName)
 	_, err := db.Exec(sql)
 	if err != nil {
 		panic(err)
@@ -153,15 +147,15 @@ func (d *dbCreator) CreateDB(dbName string) error {
 }
 
 func (d *dbCreator) PostCreateDB(dbName string) error {
-    parts := strings.Split(strings.TrimSpace(d.tags), ",")
-    tableCols["tags"] = parts[1:]
+	parts := strings.Split(strings.TrimSpace(d.tags), ",")
+	tableCols["tags"] = parts[1:]
 
-    for _, cols := range d.cols {
-        parts := strings.Split(strings.TrimSpace(cols), ",")
-        tableCols[parts[0]] = parts[1:]
+	for _, cols := range d.cols {
+		parts := strings.Split(strings.TrimSpace(cols), ",")
+		tableCols[parts[0]] = parts[1:]
 	}
 
-    return nil
+	return nil
 }
 
 // createTagsTable builds CREATE TABLE SQL statement and runs it
@@ -176,7 +170,7 @@ func createTagsTable(db *sqlx.DB, tags []string) {
 	index := "id"
 
 	sql := fmt.Sprintf(`
-		CREATE TABLE tags(
+		CREATE TABLE IF NOT EXISTS tags(
 			created_date Date     DEFAULT today(),
 			created_at   DateTime DEFAULT now(),
 			id           UInt32,
@@ -192,6 +186,7 @@ func createTagsTable(db *sqlx.DB, tags []string) {
 	if err != nil {
 		panic(err)
 	}
+	truncateTable(db, "tags")
 }
 
 // createMetricsTable builds CREATE TABLE SQL statement and runs it
@@ -224,14 +219,13 @@ func createMetricsTable(db *sqlx.DB, tableSpec []string) {
 			// Skip nameless columns
 			continue
 		}
-		columnsWithType = append(columnsWithType, fmt.Sprintf("%s Float64", column))
+		columnsWithType = append(columnsWithType, fmt.Sprintf("%s Float64 Codec(Gorilla, ZSTD)", column))
 	}
 
 	sql := fmt.Sprintf(`
-			CREATE TABLE %s (
+			CREATE TABLE IF NOT EXISTS %s (
 				created_date    Date     DEFAULT today(),
-				created_at      DateTime DEFAULT now(),
-				time            String,
+				created_at      DateTime DEFAULT now() Codec(DoubleDelta, ZSTD),
 				tags_id         UInt32,
 				%s,
 				additional_tags String   DEFAULT ''
@@ -242,6 +236,15 @@ func createMetricsTable(db *sqlx.DB, tableSpec []string) {
 	if debug > 0 {
 		fmt.Printf(sql)
 	}
+	_, err := db.Exec(sql)
+	if err != nil {
+		panic(err)
+	}
+	truncateTable(db, tableName)
+}
+
+func truncateTable(db *sqlx.DB, tableName string) {
+	sql := fmt.Sprintf("TRUNCATE TABLE %s", tableName)
 	_, err := db.Exec(sql)
 	if err != nil {
 		panic(err)

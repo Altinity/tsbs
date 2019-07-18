@@ -202,21 +202,18 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 			panic(err)
 		}
 		timeUTC := time.Unix(0, timestampNano)
-		TimeUTCStr := timeUTC.Format("2006-01-02 15:04:05.999999 -0700")
 
 		// use nil at 2-nd position as placeholder for tagKey
 		r := make([]interface{}, 0, colLen)
 		// First columns in table are
 		// created_date
 		// created_at
-		// time
 		// tags_id - would be nil for now
 		// additional_tags
-		tagsIdPosition = 3 // what is the position of the tags_id in the row - nil value
+		tagsIdPosition = 2 // what is the position of the tags_id in the row - nil value
 		r = append(r,
 			timeUTC,    // created_date
 			timeUTC,    // created_at
-			TimeUTCStr, // time
 			nil,        // tags_id
 			json)       // additional_tags
 
@@ -280,7 +277,7 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	// Inspite of "additional_tags" being added the last one in CREATE TABLE stmt
 	// it goes as a third one here - because we can move columns - they are named
 	// and it is easier to keep variable coumns at the end of the list
-	cols = append(cols, "created_date", "created_at", "time", "tags_id", "additional_tags")
+	cols = append(cols, "created_date", "created_at", "tags_id", "additional_tags")
 	if inTableTag {
 		cols = append(cols, tableCols["tags"][0]) // hostname
 	}
